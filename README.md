@@ -10,27 +10,39 @@ Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chu
 - **`run.bat debug`** — chạy **CÓ** cửa sổ cmd để đọc lỗi, và giữ cửa sổ lại nếu
   tool crash. Dùng khi tool không mở được.
 
-## Cập nhật từ GitHub (không cần gửi file mới)
+---
 
-Nút **⬆ Cập nhật** ở thanh dưới cùng (tab 1):
+## Cập nhật & cài trên máy khác (GitHub)
 
-1. Bấm **⬆ Cập nhật** → tool tự so bản đang dùng với bản trên GitHub.
-2. Có bản mới → hiện thông báo kèm mô tả thay đổi → bấm **Yes**.
-3. Tool tải bản mới, ghi đè mã nguồn, rồi hỏi **khởi động lại** → bấm **Yes**.
+Tool tự cập nhật qua GitHub: **`github.com/NaupUuh/News_Clip_Stitcher`**
 
-**Không bao giờ mất:** `config.json` (cài đặt + key), `output/` (video đã
-render), `models/` (model AI). Bản cũ được sao lưu tự động vào
-`_backup_update/<ngày-giờ>/` trước khi ghi đè.
+**Máy mới — chỉ làm 1 lần:**
 
-Cập nhật bằng dòng lệnh (khi tool không mở được):
+1. Tải file **`Cai_dat_may_moi.bat`** (gửi qua chat/Drive — chỉ ~2 KB, không phải
+   cả tool).
+2. Double-click nó → tool tự tải bản mới nhất từ GitHub về, tạo folder
+   `News_Clip_Stitcher` cạnh file `.bat`.
+3. Từ đó mở tool bằng `Mo_An.vbs` như bình thường.
 
+**Máy đã có tool — mỗi lần có bản mới:**
+
+Mở tool → bấm nút **`⬆ Cập nhật`** (góc phải thanh dưới) → bấm **Có** →
+tool tải bản mới, **giữ nguyên cài đặt + key + video cũ**, rồi **tự mở lại**.
+
+- Bản cũ được sao lưu ở `_backup_update/<ngày giờ>/` — hỏng còn lùi được.
+- `config.json` (key Vilao, đường dẫn, cài đặt) **không bao giờ** bị ghi đè.
+- Chạy tay: `python updater.py` (chỉ kiểm tra) hoặc `python updater.py --apply`.
+
+**Phát hành bản mới (chỉ trên máy anh):**
+
+```bash
+python release.py 1.20.0 "Mô tả ngắn thay đổi"
 ```
-python updater.py            # chỉ kiểm tra
-python updater.py --apply    # kiểm tra rồi cập nhật luôn
-```
 
-Repo: <https://github.com/NaupUuh/News_Clip_Stitcher> (public). Bản phát hành
-được đánh dấu bằng `version.json` — sửa file đó rồi push là máy khác cập nhật được.
+Script tự bump version trong `main.py` + `version.json`, commit và push. Máy khác
+chỉ cần bấm "⬆ Cập nhật".
+
+Repo: <https://github.com/NaupUuh/News_Clip_Stitcher> (public).
 
 ## Ô nhập key Vilao (tab 2)
 
