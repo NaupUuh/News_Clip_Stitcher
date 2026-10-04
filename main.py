@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.18.0"
+APP_VERSION = "1.19.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -315,6 +315,12 @@ class App:
         self.prog.pack(side="left", padx=12)
         self.status_var = tk.StringVar(value="Sẵn sàng")
         ttk.Label(f, textvariable=self.status_var, width=34).pack(side="left")
+
+        # Cập nhật từ GitHub: máy nào cũng chỉ cần bấm nút này, KHÔNG phải gửi
+        # lại file rồi cài đặt từ đầu (config.json + output luôn được giữ).
+        self.upd_btn = ttk.Button(f, text="⬆ Cập nhật",
+                                  command=self._check_update)
+        self.upd_btn.pack(side="right", padx=3)
 
         lg = ttk.LabelFrame(t, text="Log", padding=3)
         lg.pack(side="bottom", fill="x", padx=8, pady=(0, 8))
@@ -2138,6 +2144,96 @@ class App:
         if ok:
             self.root.after(0, lambda: messagebox.showinfo(
                 "Hoàn tất", f"Đã tạo {ok} video.\nLỗi: {fail}\n\n{out_dir}"))
+
+    # ------------------------------------------------ cập nhật từ GitHub
+
+    def _check_update(self):
+        """Kiểm tra GitHub rồi (nếu có bản mới) hỏi trước khi cập nhật."""
+        if getattr(self, "busy", False):
+            messagebox.showwarning("Đang chạy",
+                                   "Tool đang render — đợi xong rồi cập nhật.")
+            return
+        self.upd_btn.config(state="disabled", text="⬆ Đang kiểm tra...")
+        threading.Thread(target=self._update_work, daemon=True).start()
+
+    def _update_work(self):
+        try:
+            import updater as U
+        except Exception as e:
+            self.root.after(0, lambda: self._update_fail(f"Thiếu updater.py: {e}"))
+            return
+        self.blog(f"Bản đang dùng: v{U.read_local_version()}")
+        r = U.check_update()
+        if not r.get("ok"):
+            self.root.after(0, lambda: self._update_fail(r.get("error", "?")))
+            return
+        if not r.get("has_update"):
+            self.root.after(0, lambda: self._update_done(
+                f"Bạn đang dùng bản mới nhất (v{r['local']})."))
+            return
+        self.root.after(0, lambda: self._update_ask(r))
+
+    def _update_ask(self, r):
+        notes = (r.get("notes") or "").strip()
+        msg = (f"Có bản mới v{r['remote']} (bạn đang dùng v{r['local']}).\n\n"
+               + (notes + "\n\n" if notes else "")
+               + "Cập nhật NGAY bây giờ?\n"
+                 "(Cài đặt + key + video cũ được giữ nguyên.)")
+        if not messagebox.askyesno("Có bản cập nhật", msg):
+            self._update_done("Đã bỏ qua cập nhật.")
+            return
+        self.upd_btn.config(text="⬆ Đang tải...")
+        threading.Thread(target=self._update_apply, args=(r,), daemon=True).start()
+
+    def _update_apply(self, r):
+        try:
+            import updater as U
+            res = U.apply_update(r.get("zip", ""), log=self.blog)
+        except Exception as e:
+            self.root.after(0, lambda: self._update_fail(f"Lỗi cập nhật: {e}"))
+            return
+        if not res.get("ok"):
+            self.root.after(0, lambda: self._update_fail(res.get("error", "?")))
+            return
+        self.root.after(0, lambda: self._update_restart(res))
+
+    def _update_restart(self, res):
+        v = res.get("version", "?")
+        self.blog(f"Đã cập nhật lên v{v}. Đang khởi động lại tool...")
+        if not messagebox.askyesno(
+                "Đã cập nhật",
+                f"Đã cập nhật lên v{v}.\n\n"
+                f"Bản cũ được sao lưu ở:\n{res.get('backup', '')}\n\n"
+                "Khởi động lại tool ngay bây giờ?"):
+            self._update_done(f"Đã cập nhật v{v} — mở lại tool để dùng bản mới.")
+            return
+        self._restart()
+
+    def _restart(self):
+        """Mở lại chính tool này rồi thoát tiến trình hiện tại."""
+        try:
+            py = sys.executable or "python"
+            me = Path(__file__).resolve()
+            # máy Windows: ưu tiên mở ẩn bằng Mo_An.vbs nếu có
+            vbs = BASE / "Mo_An.vbs"
+            if os.name == "nt" and vbs.is_file():
+                subprocess.Popen(["wscript.exe", "//nologo", str(vbs)],
+                                 cwd=str(BASE))
+            else:
+                subprocess.Popen([py, str(me)], cwd=str(BASE))
+            self.root.after(300, self.root.destroy)
+        except Exception as e:
+            self._update_fail(f"Không tự mở lại được ({e}). Mở tool bằng tay.")
+
+    def _update_done(self, msg):
+        self.upd_btn.config(state="normal", text="⬆ Cập nhật")
+        self.blog(msg)
+        self.status_var.set(msg[:60])
+
+    def _update_fail(self, err):
+        self.upd_btn.config(state="normal", text="⬆ Cập nhật")
+        self.blog(f"LỖI cập nhật: {err}")
+        messagebox.showerror("Cập nhật", f"Không cập nhật được:\n{err}")
 
 
 

@@ -1,4 +1,4 @@
-# News Clip Stitcher v1.18.0
+# News Clip Stitcher v1.19.0
 
 Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chuyển động**, kiểu news reel.
 
@@ -9,6 +9,28 @@ Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chu
 - **`run.bat`** — cũng chạy ẩn (tự gọi lại chính nó qua VBS). Double-click được.
 - **`run.bat debug`** — chạy **CÓ** cửa sổ cmd để đọc lỗi, và giữ cửa sổ lại nếu
   tool crash. Dùng khi tool không mở được.
+
+## Cập nhật từ GitHub (không cần gửi file mới)
+
+Nút **⬆ Cập nhật** ở thanh dưới cùng (tab 1):
+
+1. Bấm **⬆ Cập nhật** → tool tự so bản đang dùng với bản trên GitHub.
+2. Có bản mới → hiện thông báo kèm mô tả thay đổi → bấm **Yes**.
+3. Tool tải bản mới, ghi đè mã nguồn, rồi hỏi **khởi động lại** → bấm **Yes**.
+
+**Không bao giờ mất:** `config.json` (cài đặt + key), `output/` (video đã
+render), `models/` (model AI). Bản cũ được sao lưu tự động vào
+`_backup_update/<ngày-giờ>/` trước khi ghi đè.
+
+Cập nhật bằng dòng lệnh (khi tool không mở được):
+
+```
+python updater.py            # chỉ kiểm tra
+python updater.py --apply    # kiểm tra rồi cập nhật luôn
+```
+
+Repo: <https://github.com/NaupUuh/News_Clip_Stitcher> (public). Bản phát hành
+được đánh dấu bằng `version.json` — sửa file đó rồi push là máy khác cập nhật được.
 
 ## Ô nhập key Vilao (tab 2)
 

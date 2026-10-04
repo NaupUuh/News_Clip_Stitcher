@@ -1,5 +1,5 @@
 {
-  "version": "1.18.0",
-  "notes": "Gom thông số đã tối ưu vào nút \"Mở rộng thông số nâng cao\" cho gọn bố cục; sửa crop tự canh mặt cho ảnh/video ngang (không còn cắt mất mặt chủ thể).",
+  "version": "1.19.0",
+  "notes": "Them nut 'Cap nhat' tu GitHub: may khac chi can bam la len ban moi, khong can gui file hay cai dat lai (giu nguyen cai dat + key + video cu).",
   "date": "2026-10-04"
 }
