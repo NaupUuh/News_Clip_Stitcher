@@ -3,6 +3,8 @@
 # =====================================================================
 config.json
 config.json.bak
+config.json.bak_*
+config.json.smoke_bak
 
 # video render ra
 output/
