@@ -33,6 +33,11 @@ REPO = "NaupUuh/News_Clip_Stitcher"
 BRANCH = "main"
 BASE = Path(__file__).resolve().parent
 
+# Đọc version.json qua API (KHÔNG bị CDN cache như raw.githubusercontent) —
+# raw.githubusercontent giữ cache ~5 phút nên máy khác bấm ngay sau khi push
+# sẽ thấy bản CŨ. API trả dữ liệu tươi; raw chỉ dùng làm phương án dự phòng.
+VERSION_API = (f"https://api.github.com/repos/{REPO}/contents/version.json"
+               f"?ref={BRANCH}")
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/version.json"
 ZIP_URL = f"https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip"
 COMMITS_URL = (f"https://api.github.com/repos/{REPO}/commits?"
@@ -79,6 +84,31 @@ def _get(url: str, timeout: int = TIMEOUT) -> bytes:
         return r.read()
 
 
+def _read_version_json() -> dict:
+    """Đọc version.json từ repo. Ưu tiên API (tươi), lỗi thì dùng raw.
+
+    Trả dict; ném Exception kèm lý do nếu cả hai đường đều hỏng.
+    """
+    last = None
+    # 1) API contents -> trả base64 trong JSON
+    try:
+        j = json.loads(_get(VERSION_API).decode("utf-8", "replace"))
+        import base64
+        raw = base64.b64decode(j.get("content", "")).decode("utf-8", "replace")
+        return json.loads(raw)
+    except urllib.error.HTTPError as e:
+        last = e
+        if e.code == 404:
+            raise
+    except Exception as e:
+        last = e
+    # 2) raw.githubusercontent (có thể bị cache tới ~5 phút)
+    try:
+        return json.loads(_get(VERSION_URL).decode("utf-8", "replace"))
+    except Exception:
+        raise last if last is not None else RuntimeError("không đọc được version.json")
+
+
 # ---------------------------------------------------------------- kiểm tra
 
 def check_update(use_api: bool = True) -> dict:
@@ -94,7 +124,7 @@ def check_update(use_api: bool = True) -> dict:
 
     # 1) version.json trên repo
     try:
-        data = json.loads(_get(VERSION_URL).decode("utf-8", "replace"))
+        data = _read_version_json()
         out["remote"] = str(data.get("version") or "").strip()
         out["notes"] = str(data.get("notes") or "").strip()
         out["zip"] = str(data.get("zip") or "").strip() or ZIP_URL
