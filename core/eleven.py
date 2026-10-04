@@ -114,10 +114,13 @@ DEFAULT_MODEL = "eleven_multilingual_v2"
 # cao độ) — xem fit_duration().
 DEFAULT_READ_SECONDS = 15.0
 
-# Ước lượng tốc độ đọc của MC tin tức tiếng Anh (~14.5 ký tự/giây) để hiện
-# gợi ý số ký tự nên nhập. Chỉ là gợi ý — số thật đo được lưu vào config
-# (khoá "tts_cps") sau mỗi lần tạo để lần sau gợi ý sát hơn.
-CHARS_PER_SEC_HINT = 14.5
+# Ước lượng tốc độ đọc của MC tin tức tiếng Anh, để hiện gợi ý số ký tự nên
+# nhập. ĐO THẬT 4 giọng ElevenLabs (eleven_multilingual_v2, text tin tức 181
+# ký tự): Brian 17.1, Daniel 13.4, Adam 14.5, George 17.4 -> trung bình 15.6
+# ký tự/giây. Đặt 15.6 để gợi ý khỏi hụt (14.5 cũ hụt 7% -> audio ra ngắn rồi
+# bị làm chậm nghe lê). Số thật vẫn đo lại và lưu vào config (khoá "tts_cps")
+# sau mỗi lần tạo nên gợi ý ngày càng sát giọng đang dùng.
+CHARS_PER_SEC_HINT = 15.6
 
 
 def chars_for_seconds(secs: float, cps: float | None = None) -> int:
@@ -179,6 +182,20 @@ def fit_duration(path, target_s: float, ffmpeg=None, log=None) -> dict:
     ratio = d0 / target                      # >1: audio dài hơn đích
     af = _atempo_chain(ratio) + ",apad"      # apad bù im lặng nếu vẫn thiếu
     tmp = path.with_name(path.stem + ".fit.mp3")
+    try:
+        from .ffmpeg_util import _DUR_CACHE as _DC
+    except ImportError:
+        from ffmpeg_util import _DUR_CACHE as _DC
+    # probe_duration CACHE THEO ĐƯỜNG DẪN, mà file tạm luôn cùng tên
+    # (<tên>.fit.mp3) nên lần ép thứ hai trở đi sẽ đọc lại số giây CŨ của lần
+    # trước -> tưởng ép hỏng (ép 15s->30s báo "ra 15.00s" dù file thật đúng 30s).
+    # Xoá cache của cả file tạm lẫn file đích trước khi đo.
+    _DC.pop(str(tmp), None)
+    _DC.pop(str(path), None)
+    try:
+        tmp.unlink()                         # dọn file tạm còn sót của lần trước
+    except Exception:
+        pass
     cmd = [exe, "-y", "-v", "error", "-i", str(path), "-filter:a", af,
            "-t", "%.4f" % target,
            "-c:a", "libmp3lame", "-b:a", "192k", str(tmp)]

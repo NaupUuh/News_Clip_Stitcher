@@ -1,5 +1,5 @@
 {
-  "version": "1.24.0",
-  "notes": "Khung MC: le trai SET CUNG bang khung BREAKING NEWS (bo o chon gay lech 52px) + ElevenLabs: o 'thoi gian doc' mac dinh 15s, tu ep audio khop do dai video",
+  "version": "1.24.1",
+  "notes": "Sua loi ep thoi luong audio: lan ep thu 2 tro di doc cache cu nen bao that bai (ep 15s->30s). Them toc do doc do that 15.6 ky tu/giay (do 4 giong ElevenLabs) de goi y so ky tu chinh xac",
   "date": "2026-10-04"
 }

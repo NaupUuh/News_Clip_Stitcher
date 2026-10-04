@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.24.0"
+APP_VERSION = "1.24.1"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -139,7 +139,7 @@ DEFAULTS = {
     "tts_dir_in": "",
     "tts_read_seconds": 15.0,
     "tts_fit": True,
-    "tts_cps": 14.5,
+    "tts_cps": 15.6,
     "out_dir": str(OUTPUT),
     "ffmpeg_dir": "",
     "copy_z": False,
