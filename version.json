@@ -1,5 +1,5 @@
 {
-  "version": "1.23.1",
-  "notes": "README: huong dan sua loi CERTIFICATE_VERIFY_FAILED (may thieu chung chi CA) bang Sua_loi_cap_nhat.bat",
+  "version": "1.24.0",
+  "notes": "Khung MC: le trai SET CUNG bang khung BREAKING NEWS (bo o chon gay lech 52px) + ElevenLabs: o 'thoi gian doc' mac dinh 15s, tu ep audio khop do dai video",
   "date": "2026-10-04"
 }

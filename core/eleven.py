@@ -107,6 +107,125 @@ MODELS = [
 
 DEFAULT_MODEL = "eleven_multilingual_v2"
 
+# ── thời gian đọc ─────────────────────────────────────────────────────
+# Video tin tức dài 15s -> audio cũng phải ~15s thì khớp. ElevenLabs KHÔNG
+# nhận "độ dài mong muốn", nó đọc hết text nên dài ngắn tuỳ số ký tự. Vì vậy
+# sau khi tạo xong phải ÉP về đúng số giây bằng ffmpeg (atempo co giãn giữ
+# cao độ) — xem fit_duration().
+DEFAULT_READ_SECONDS = 15.0
+
+# Ước lượng tốc độ đọc của MC tin tức tiếng Anh (~14.5 ký tự/giây) để hiện
+# gợi ý số ký tự nên nhập. Chỉ là gợi ý — số thật đo được lưu vào config
+# (khoá "tts_cps") sau mỗi lần tạo để lần sau gợi ý sát hơn.
+CHARS_PER_SEC_HINT = 14.5
+
+
+def chars_for_seconds(secs: float, cps: float | None = None) -> int:
+    """Số ký tự nên nhập để đọc vừa `secs` giây."""
+    try:
+        s = float(secs or 0)
+    except Exception:
+        return 0
+    if s <= 0:
+        return 0
+    return int(round(s * float(cps or CHARS_PER_SEC_HINT)))
+
+
+def _atempo_chain(ratio: float) -> str:
+    """Chuỗi atempo cho hệ số bất kỳ (mỗi mắt chỉ nhận 0.5–2.0)."""
+    parts, r = [], float(ratio)
+    while r > 2.0:
+        parts.append("atempo=2.0")
+        r /= 2.0
+    while r < 0.5:
+        parts.append("atempo=0.5")
+        r /= 0.5
+    parts.append("atempo=%.6f" % r)
+    return ",".join(parts)
+
+
+def fit_duration(path, target_s: float, ffmpeg=None, log=None) -> dict:
+    """Ép file audio về ĐÚNG `target_s` giây, GIỮ CAO ĐỘ (atempo, không méo giọng).
+
+    - audio dài hơn đích -> đọc nhanh lên (atempo > 1)
+    - audio ngắn hơn đích -> đọc chậm lại rồi đệm im lặng cho đủ
+    Ghi đè chính file đó (mp3). Không raise — trả dict trạng thái.
+    """
+    try:
+        target = float(target_s or 0)
+    except Exception:
+        target = 0.0
+    if target <= 0.2:
+        return {"ok": False, "msg": "thời gian đọc không hợp lệ"}
+    try:
+        from .ffmpeg_util import (find_ffmpeg, find_ffprobe, probe_duration,
+                                  run_cmd)
+    except ImportError:  # chạy trực tiếp không qua package
+        from ffmpeg_util import (find_ffmpeg, find_ffprobe, probe_duration,
+                                 run_cmd)
+    path = Path(path)
+    if not path.is_file():
+        return {"ok": False, "msg": "không thấy file audio"}
+    fp = find_ffprobe()
+    d0 = float(probe_duration(str(path), fp) or 0.0)
+    if d0 <= 0:
+        return {"ok": False, "msg": "không đọc được thời lượng audio"}
+    if abs(d0 - target) <= 0.06:
+        return {"ok": True, "before": d0, "after": d0, "tempo": 1.0,
+                "action": "đã đúng, giữ nguyên", "path": str(path)}
+    exe = ffmpeg or find_ffmpeg()
+    if not exe:
+        return {"ok": False, "msg": "không tìm thấy ffmpeg"}
+    ratio = d0 / target                      # >1: audio dài hơn đích
+    af = _atempo_chain(ratio) + ",apad"      # apad bù im lặng nếu vẫn thiếu
+    tmp = path.with_name(path.stem + ".fit.mp3")
+    cmd = [exe, "-y", "-v", "error", "-i", str(path), "-filter:a", af,
+           "-t", "%.4f" % target,
+           "-c:a", "libmp3lame", "-b:a", "192k", str(tmp)]
+    try:
+        run_cmd(cmd, log=None)
+    except Exception as e:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        return {"ok": False, "msg": "ffmpeg lỗi: %s" % e}
+    d1 = float(probe_duration(str(tmp), fp) or 0.0)
+    if not d1 or abs(d1 - target) > 0.25:
+        try:
+            tmp.unlink()
+        except Exception:
+            pass
+        return {"ok": False, "msg": "ép thời lượng thất bại (ra %.2fs)" % (d1 or 0)}
+    try:
+        tmp.replace(path)
+    except Exception as e:
+        return {"ok": False, "msg": "không ghi đè được file: %s" % e}
+    # probe_duration có cache theo đường dẫn -> phải xoá, không thì lần sau
+    # vẫn đọc ra số giây CŨ của file trước khi ép.
+    try:
+        from .ffmpeg_util import _DUR_CACHE
+    except ImportError:
+        from ffmpeg_util import _DUR_CACHE
+    _DUR_CACHE.pop(str(path), None)
+    if ratio > 1.0001:
+        act = "đọc nhanh %.3fx" % ratio
+    elif ratio < 0.9999:
+        act = "đọc chậm %.3fx + đệm im lặng" % ratio
+    else:
+        act = "giữ nguyên"
+    # cảnh báo khi phải co giãn quá mạnh -> nghe gấp/lê thấy rõ
+    warn = ""
+    if ratio > 1.35:
+        warn = "  ⚠ text DÀI hơn nhiều so với %gs — nên rút ngắn nội dung" % target
+    elif ratio < 0.72:
+        warn = "  ⚠ text NGẮN hơn nhiều so với %gs — nên viết thêm nội dung" % target
+    if warn and log:
+        log("   " + warn.strip())
+    return {"ok": True, "before": d0, "after": d1, "tempo": ratio,
+            "action": act + warn, "path": str(path)}
+
+
 # cấu hình giọng mặc định — thiên về đọc tin (ổn định, ít "diễn")
 VOICE_SETTINGS = {
     "stability": 0.45,
@@ -202,8 +321,14 @@ def key_info(key: str) -> dict:
 
 
 def synthesize(key: str, voice_id: str, model_id: str, text: str,
-               out_path: str | Path, settings: dict | None = None) -> dict:
-    """Tạo MP3. Raise RuntimeError với thông báo tiếng Việt khi lỗi."""
+               out_path: str | Path, settings: dict | None = None,
+               speed: float = 1.0) -> dict:
+    """Tạo MP3. Raise RuntimeError với thông báo tiếng Việt khi lỗi.
+
+    `speed` (0.7–1.2 khuyến nghị) chỉnh tốc độ đọc ngay tại ElevenLabs.
+    Mặc định 1.0 = giọng gốc; muốn khớp đúng số giây thì để nguyên 1.0 rồi
+    dùng fit_duration() sau khi tạo.
+    """
     text = (text or "").strip()
     if not text:
         raise RuntimeError("chưa nhập nội dung đọc")
@@ -214,11 +339,18 @@ def synthesize(key: str, voice_id: str, model_id: str, text: str,
     st = dict(VOICE_SETTINGS)
     if settings:
         st.update(settings)
+    try:
+        sp = float(speed)
+    except Exception:
+        sp = 1.0
+    if abs(sp - 1.0) > 0.001:
+        st["speed"] = max(0.7, min(1.2, sp))
     body = json.dumps({
         "text": text,
         "model_id": model_id or DEFAULT_MODEL,
         "voice_settings": st,
     }).encode("utf-8")
+
     url = f"{API_BASE}/v1/text-to-speech/{voice_id}"
     t0 = time.time()
     try:
@@ -240,5 +372,11 @@ def synthesize(key: str, voice_id: str, model_id: str, text: str,
     if len(data) < 512:
         raise RuntimeError("ElevenLabs trả về dữ liệu rỗng")
     out_path.write_bytes(data)
-    return {"bytes": len(data), "chars": len(text),
+    try:
+        from .ffmpeg_util import probe_duration
+    except ImportError:
+        from ffmpeg_util import probe_duration
+    secs = round(float(probe_duration(str(out_path)) or 0.0), 2)
+    return {"bytes": len(data), "chars": len(text), "seconds": secs,
             "elapsed_s": round(time.time() - t0, 2), "path": str(out_path)}
+

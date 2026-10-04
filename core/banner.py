@@ -124,11 +124,9 @@ BANNER_DEFAULTS = {
     # cua banner THUC trong tool (red_y = 73.6%H), cach nhau `pip_gap`. Neu
     # hard-code theo anh tham chieu (78.4%) thi khung MC de len thanh do.
     "pip_enabled": False,
-    "pip_x": 0.012,          # le trai khung MC (dung khi pip_align_x="none")
-    # THANG HANG LE TRAI: "red" = bang mep trai o do BREAKING, "white" = bang o
-    # trang tieu de, "none" = dung pip_x. Mac dinh "red" -> khung MC khong thoa
-    # ra ngoai banner nua, nhin gon nhu layout CNN that.
-    "pip_align_x": "red",
+    # LE TRAI khung MC: SET CUNG theo mep trai thanh do banner (red_x) — xem
+    # pip_geom(). Khong con "pip_x"/"pip_align_x": chon nham la lech khung MC
+    # (do that: x=13 vs banner x=65 = lech 52px). User yeu cau set cung.
     "pip_y": None,           # None = tu neo NGAY TREN thanh do banner
     "pip_auto_y": True,      # True = luon neo tren banner (khuyen dung)
     "pip_gap": 0.008,        # khe ho giua day khung MC va dinh thanh do
@@ -451,22 +449,13 @@ def pip_geom(w: int, h: int, cfg: dict) -> dict:
     pw = max(8, int(round(float(c.get("pip_w", 0.325)) * w)))
     ph = max(8, int(round(float(c.get("pip_h", 0.198)) * h)))
 
-    # LE TRAI: "red"/"white" -> bang dung mep trai khoi do / o trang cua banner,
-    # de khung MC khong thoa ra ngoai banner (user yeu cau "bo thang hang").
-    align = str(c.get("pip_align_x", "red") or "red").strip().lower()
-    # Chiu duoc ca NHAN tieng Viet lan MA: config.json cu tung luu nhan
-    # "Bằng ô đỏ BREAKING" -> neu chi so sanh voi "red" thi roi vao nhanh else
-    # va dung pip_x (lech lai). Map nhan -> ma truoc khi so.
-    align = {
-        "bằng ô đỏ breaking": "red", "bằng ô trắng tiêu đề": "white",
-        "tự đặt lề trái": "none",
-    }.get(align, align)
-    if align == "red":
-        px = int(round(float(c.get("red_x", 0.0667)) * w))
-    elif align == "white":
-        px = int(round(float(c.get("white_x", 0.0778)) * w))
-    else:
-        px = int(round(float(c.get("pip_x", 0.012)) * w))
+    # LE TRAI: SET CUNG — luon bang dung mep trai khung BREAKING NEWS (red_x).
+    # Truoc day con nhanh "Tự đặt lề trái" (pip_x) va "Bằng ô trắng tiêu đề"
+    # (white_x): chon nham la khung MC thoa ra ngoai banner. Do tren video that
+    # 1080x1920 (D:\trumppp0410\2\VD 2): khung MC x=13 con thanh do x=65 ->
+    # LECH 52px. User yeu cau "set cung bang khung Breaking news, khong duoc
+    # lech" -> bo han moi lua chon, khung MC luon bam mep trai thanh do.
+    px = int(round(float(c.get("red_x", 0.0667)) * w))
     px = max(0, min(px, w - pw))
 
     # VI TRI DOC: pip_auto_y=True (mac dinh) -> neo day khung MC ngay TREN dinh

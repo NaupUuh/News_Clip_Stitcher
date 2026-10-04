@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.23.1"
+APP_VERSION = "1.24.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -137,6 +137,9 @@ DEFAULTS = {
     "tts_text": "",
     "tts_dir": "",
     "tts_dir_in": "",
+    "tts_read_seconds": 15.0,
+    "tts_fit": True,
+    "tts_cps": 14.5,
     "out_dir": str(OUTPUT),
     "ffmpeg_dir": "",
     "copy_z": False,
@@ -204,6 +207,14 @@ class App:
                 self.cfg[k] = v.get()
             except Exception:
                 pass
+        # ô nhập số giây là StringVar -> phải cất thành SỐ, không cất chuỗi
+        # (config.json dễ đọc + đọc lại không phải parse lại).
+        try:
+            self.cfg["tts_read_seconds"] = max(
+                0.5, min(3600.0, float(str(self.cfg.get("tts_read_seconds"))
+                                       .replace(",", "."))))
+        except Exception:
+            self.cfg["tts_read_seconds"] = eleven.DEFAULT_READ_SECONDS
         self.cfg["folders"] = self.folders
         # tab 2: tuỳ chọn lấy tin nóng (widget riêng, không nằm trong bvars)
         if getattr(self, "nw_tree", None) is not None:
@@ -229,15 +240,11 @@ class App:
                 # chay. Giu nguyen phan con lai (toa do, mau, co bat/tat).
                 b["pip_src"] = ""
                 b["pip_folder"] = ""
-                # combobox luu NHAN tieng Viet -> cat xuong dang MA ("red"), neu
-                # khong thi lan sau mo tool doc config se khong khop ma va khung
-                # MC lech lai (bug v1.9.1).
-                if "pip_align_x" in b:
-                    b["pip_align_x"] = {
-                        "Bằng ô đỏ BREAKING": "red",
-                        "Bằng ô trắng tiêu đề": "white",
-                        "Tự đặt lề trái": "none",
-                    }.get(str(b["pip_align_x"]), b["pip_align_x"])
+                # Le trai khung MC nay SET CUNG theo mep trai thanh do banner
+                # (xem pip_geom). Xoa khoa cu de config.json khong con lua chon
+                # gay lech khung MC (bug: chon "Tự đặt lề trái" -> lech 52px).
+                for k in ("pip_align_x", "pip_x"):
+                    b.pop(k, None)
                 # O tich "Co MC" nghia la CO MC -> khong co MC thi tat luon, keo
                 # lan sau mo tool thay tich san ma khung trong.
                 b["pip_enabled"] = False
@@ -526,6 +533,39 @@ class App:
         if self.cfg.get("tts_text"):
             self.tts_text.insert("1.0", str(self.cfg.get("tts_text")))
 
+        self.tts_text.bind("<KeyRelease>", lambda e: self._tts_len_hint())
+
+        # Thời gian đọc — video 15s thì audio cũng phải ~15s mới khớp.
+        # ElevenLabs không nhận "độ dài", nó đọc hết text -> phải ép về số
+        # giây này sau khi tạo (xem eleven.fit_duration).
+        f = ttk.Frame(g); f.pack(fill="x", pady=2)
+        ttk.Label(f, text="Thời gian đọc:", width=14).pack(side="left")
+        try:
+            _rs = float(self.cfg.get("tts_read_seconds", 15.0) or 15.0)
+        except Exception:
+            _rs = 15.0
+        if _rs <= 0:
+            _rs = 15.0
+        self.tts_secs_var = tk.StringVar(value=("%g" % _rs))
+        self.vars["tts_read_seconds"] = self.tts_secs_var
+        _sp = tk.Spinbox(f, from_=1, to=600, increment=1, width=6,
+                         textvariable=self.tts_secs_var,
+                         command=self._tts_len_hint)
+        _sp.pack(side="left", padx=3)
+        _sp.bind("<KeyRelease>", lambda e: self._tts_len_hint())
+        ttk.Label(f, text="giây  (mặc định 15 — khớp video 15s)",
+                  foreground="#666").pack(side="left", padx=(0, 10))
+        self.tts_fit_var = tk.BooleanVar(value=bool(self.cfg.get("tts_fit", True)))
+        self.vars["tts_fit"] = self.tts_fit_var
+        ttk.Checkbutton(f, text="Ép đúng số giây khi tạo",
+                        variable=self.tts_fit_var,
+                        command=self._tts_len_hint).pack(side="left", padx=4)
+
+        f = ttk.Frame(g); f.pack(fill="x", pady=2)
+        self.tts_len_var = tk.StringVar(value="")
+        ttk.Label(f, textvariable=self.tts_len_var, foreground="#0a6",
+                  wraplength=900, justify="left").pack(anchor="w")
+
         f = ttk.Frame(g); f.pack(fill="x", pady=2)
         ttk.Label(f, text="Lưu audio:", width=9).pack(side="left")
         self.tts_dir_var = tk.StringVar(value=self.cfg.get("tts_dir", "") or str(OUTPUT / "tts"))
@@ -556,6 +596,7 @@ class App:
                           "\"folder audio\" ở mục 3.",
                   foreground="#666", wraplength=900, justify="left").pack(anchor="w")
         self._tts_voice_info()
+        self._tts_len_hint()
 
         # 4. Xuất
         g = ttk.LabelFrame(body, text="5. Nơi lưu", padding=6)
@@ -922,18 +963,8 @@ class App:
         self._bn_spin(f, "rộng:", "pip_w", 0.05, 1, 0.001, 7)
         self._bn_spin(f, "cao:", "pip_h", 0.05, 1, 0.001, 7)
         f = ttk.Frame(colL); f.pack(fill="x", pady=1)
-        ttk.Label(f, text="Thẳng hàng trái:").pack(side="left", padx=(4, 2))
-        _al = {"Bằng ô đỏ BREAKING": "red", "Bằng ô trắng tiêu đề": "white",
-               "Tự đặt lề trái": "none"}
-        _alr = {v: k for k, v in _al.items()}
-        self.bn_pip_alx = tk.StringVar(
-            value=_alr.get(str(self.bcfg.get("pip_align_x", "red")).lower(),
-                           "Bằng ô đỏ BREAKING"))
-        self.bvars["pip_align_x"] = self.bn_pip_alx
-        ttk.Combobox(f, textvariable=self.bn_pip_alx, state="readonly", width=19,
-                     values=list(_al.keys())).pack(side="left", padx=(0, 8))
-        f = ttk.Frame(colL); f.pack(fill="x", pady=1)
-        self._bn_spin(f, "lề trái:", "pip_x", 0, 1, 0.001, 7)
+        ttk.Label(f, text="Lề trái: BẰNG KHUNG BREAKING NEWS (cố định)",
+                  foreground="#0A5").pack(side="left", padx=(4, 2))
         self._bn_spin(f, "viền dày:", "pip_border_w", 0, 0.12, 0.001, 7)
         f = ttk.Frame(colL); f.pack(fill="x", pady=1)
         self._bn_spin(f, "zoom:", "pip_zoom", 1, 3, 0.01, 7)
@@ -1412,13 +1443,9 @@ class App:
                     c[k] = v.get()
             except Exception:
                 pass
-        # combobox luu NHAN tieng Viet -> doi ve MA truoc khi dua vao cfg
-        if "pip_align_x" in c:
-            c["pip_align_x"] = {
-                "Bằng ô đỏ BREAKING": "red",
-                "Bằng ô trắng tiêu đề": "white",
-                "Tự đặt lề trái": "none",
-            }.get(str(c["pip_align_x"]), "red")
+        # Le trai khung MC set cung theo thanh do banner -> khong con combobox.
+        c.pop("pip_align_x", None)
+        c.pop("pip_x", None)
         for k in ("red_color", "white_color", "red_text_color",
                   "white_text_color", "logo_color", "cta_color", "cta_outline",
                   "pip_border_color", "pip_line_color", "pip_tag_color",
@@ -1672,6 +1699,60 @@ class App:
         except Exception:
             return ""
 
+    def _tts_secs(self) -> float:
+        """Thời gian đọc đang đặt (giây)."""
+        try:
+            v = float(str(self.tts_secs_var.get()).strip().replace(",", "."))
+        except Exception:
+            v = eleven.DEFAULT_READ_SECONDS
+        if v <= 0:
+            v = eleven.DEFAULT_READ_SECONDS
+        return max(0.5, min(3600.0, v))
+
+    def _tts_fit_on(self) -> bool:
+        try:
+            return bool(self.tts_fit_var.get())
+        except Exception:
+            return True
+
+    def _tts_cps(self) -> float:
+        """Tốc độ đọc thật đo được (ký tự/giây) — càng dùng càng sát."""
+        try:
+            v = float(self.cfg.get("tts_cps") or eleven.CHARS_PER_SEC_HINT)
+        except Exception:
+            v = eleven.CHARS_PER_SEC_HINT
+        return v if 5.0 <= v <= 40.0 else eleven.CHARS_PER_SEC_HINT
+
+    def _tts_len_hint(self):
+        """Hiện gợi ý số ký tự nên nhập cho vừa số giây đang đặt."""
+        try:
+            secs = self._tts_secs()
+            txt = self._tts_text_value()
+            cps = self._tts_cps()
+            want = eleven.chars_for_seconds(secs, cps)
+            cur = len(txt)
+            base = (f"→ đọc {secs:g}s: nên nhập ~{want} ký tự "
+                    f"(tốc độ đo được ~{cps:.1f} ký tự/giây)")
+            if cur <= 0:
+                self.tts_len_var.set(base)
+                return
+            est = cur / cps
+            ratio = est / secs if secs else 1.0
+            note = base + f"  ·  hiện có {cur} ký tự ≈ {est:.1f}s"
+            if not self._tts_fit_on():
+                self.tts_len_var.set(note + "  (chưa bật ép → file dài "
+                                            f"~{est:.1f}s, KHÔNG khớp video)")
+            elif ratio > 1.35:
+                self.tts_len_var.set(note + f"  ⚠ DÀI hơn {secs:g}s → phải đọc "
+                                            f"nhanh {ratio:.2f}x, nên rút ngắn")
+            elif ratio < 0.72:
+                self.tts_len_var.set(note + f"  ⚠ NGẮN hơn {secs:g}s → phải đọc "
+                                            f"chậm {ratio:.2f}x, nên viết thêm")
+            else:
+                self.tts_len_var.set(note + "  ✔ vừa")
+        except Exception:
+            pass
+
     def _tts_play(self):
         p = Path(self.tts_dir_var.get() or ".") / (self.tts_name_var.get().strip() or "voice")
         p = p.with_suffix(".mp3")
@@ -1698,13 +1779,28 @@ class App:
         out = d / f"{name}.mp3"
         self.save_config()
         self.tts_gen_btn.config(state="disabled")
-        self.log(f"🎙 ElevenLabs: {v[0]} ({v[3]}) · {model} · {len(text)} ký tự")
+        secs = self._tts_secs()
+        do_fit = self._tts_fit_on()
+        self.log(f"🎙 ElevenLabs: {v[0]} ({v[3]}) · {model} · {len(text)} ký tự"
+                 + (f" · ép đọc {secs:g}s" if do_fit else " · không ép thời lượng"))
 
         def work():
             try:
                 r = eleven.synthesize(key, v[2], model, text, out)
                 self.log(f"✅ {out.name}  ({r['bytes']/1024:.1f} KB, "
-                         f"{r['elapsed_s']}s, {r['chars']} ký tự)")
+                         f"{r['elapsed_s']}s, {r['chars']} ký tự, "
+                         f"dài {r.get('seconds', 0):g}s)")
+                # đo tốc độ đọc thật -> lần sau gợi ý số ký tự sát hơn
+                if r.get("seconds") and r["seconds"] > 0.5:
+                    self.cfg["tts_cps"] = round(r["chars"] / r["seconds"], 2)
+                if do_fit:
+                    f = eleven.fit_duration(out, secs, log=self.log)
+                    if f.get("ok"):
+                        self.log(f"   ⏱ ép về {secs:g}s: "
+                                 f"{f['before']:.2f}s → {f['after']:.2f}s "
+                                 f"({f['action'].strip()})")
+                    else:
+                        self.log(f"   ⚠ không ép được thời lượng: {f.get('msg')}")
                 self.log(f"   → {out}")
                 # tiện: nạp luôn vào ô audio của mục 3 để render dùng ngay
                 self.root.after(0, lambda: self.audio_var.set(str(out)))
@@ -1716,6 +1812,7 @@ class App:
             except Exception as e:
                 self.log(f"❌ {type(e).__name__}: {e}")
             finally:
+                self.root.after(0, self.save_config)
                 self.root.after(0, lambda: self.tts_gen_btn.config(state="normal"))
 
         threading.Thread(target=work, daemon=True).start()
@@ -1739,10 +1836,14 @@ class App:
         d = Path(self.tts_dir_var.get().strip() or (OUTPUT / "tts"))
         self.save_config()
         self.tts_gen_btn.config(state="disabled")
-        self.log(f"📄 Hàng loạt: {len(txts)} file .txt → {d}")
+        secs = self._tts_secs()
+        do_fit = self._tts_fit_on()
+        self.log(f"📄 Hàng loạt: {len(txts)} file .txt → {d}"
+                 + (f"  ·  ép mỗi file về {secs:g}s" if do_fit else ""))
 
         def work():
             ok = 0
+            secs_seen = []
             for i, t in enumerate(txts, 1):
                 try:
                     text = t.read_text(encoding="utf-8", errors="replace").strip()
@@ -1751,12 +1852,26 @@ class App:
                         continue
                     out = d / f"{self._safe_name(t.stem)}.mp3"
                     r = eleven.synthesize(key, v[2], model, text, out)
+                    if r.get("seconds") and r["seconds"] > 0.5:
+                        secs_seen.append(r["chars"] / r["seconds"])
+                    extra = ""
+                    if do_fit:
+                        f = eleven.fit_duration(out, secs, log=self.log)
+                        if f.get("ok"):
+                            extra = (f"  ⏱ {f['before']:.2f}s → "
+                                     f"{f['after']:.2f}s")
+                        else:
+                            extra = f"  ⚠ không ép được: {f.get('msg')}"
                     ok += 1
                     self.log(f"   [{i}/{len(txts)}] ✅ {out.name} "
-                             f"({r['bytes']/1024:.1f} KB, {r['chars']} ký tự)")
+                             f"({r['bytes']/1024:.1f} KB, {r['chars']} ký tự, "
+                             f"dài {r.get('seconds', 0):g}s){extra}")
                 except Exception as e:
                     self.log(f"   [{i}/{len(txts)}] ❌ {t.name}: {e}")
+            if secs_seen:
+                self.cfg["tts_cps"] = round(sum(secs_seen) / len(secs_seen), 2)
             self.log(f"→ Xong {ok}/{len(txts)} file. Audio ở: {d}")
+            self.root.after(0, self.save_config)
             self.root.after(0, lambda: messagebox.showinfo(
                 "Xong", f"Tạo được {ok}/{len(txts)} file audio.\n{d}"))
             self.root.after(0, lambda: self.tts_gen_btn.config(state="normal"))
