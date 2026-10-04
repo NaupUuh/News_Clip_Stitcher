@@ -1,5 +1,5 @@
 {
-  "version": "1.19.0",
-  "notes": "Them nut 'Cap nhat' tu GitHub: may khac chi can bam la len ban moi, khong can gui file hay cai dat lai (giu nguyen cai dat + key + video cu).",
+  "version": "1.20.0",
+  "notes": "Clip goc bi cat lia thanh nhieu doan 2.5-4s dung het; 1 video con = nhieu doan video + vai anh (60-85% canh la video); het doan video thi dung toan anh",
   "date": "2026-10-04"
 }

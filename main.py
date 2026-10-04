@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.19.0"
+APP_VERSION = "1.20.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -122,6 +122,7 @@ DEFAULTS = {
     "seg_max": 3,
     "seg_dur_min": 2.5,
     "seg_dur_max": 4.0,
+    "vid_ratio": [0.6, 0.85],
     "n_videos": 5,
     "threads": 3,
     "max_overlap": 0.5,
@@ -415,20 +416,16 @@ class App:
         self._spin(f, "Video — zoom thêm:", "video_zoom", 0.0, 0.4, 0.01, 5)
         ttk.Label(f, text="(0 = giữ nguyên)", foreground="#666").pack(side="left")
 
-        # Cắt video nguồn thành 2-3 đoạn ngắn, mỗi video con lấy ở cửa sổ kế tiếp
+        # Cắt lìa video nguồn thành nhiều đoạn, mỗi đoạn dùng 1 lần
         f = ttk.Frame(colR); f.pack(fill="x", pady=2)
-        self._spin(f, "Video — số đoạn:", "seg_min", 1, 6, 1, 3)
-        self._spin(f, "tới:", "seg_max", 1, 6, 1, 3)
-        self._spin(f, "dài:", "seg_dur_min", 0.5, 6.0, 0.5, 4)
+        self._spin(f, "Đoạn video dài:", "seg_dur_min", 0.5, 6.0, 0.5, 4)
         self._spin(f, "tới:", "seg_dur_max", 0.5, 6.0, 0.5, 4)
-
-        f = ttk.Frame(colR); f.pack(fill="x", pady=2)
-        self._spin(f, "Video — bước nhảy cửa sổ:", "seg_window", 1.0, 60.0, 1.0, 5)
         ttk.Label(f, text="giây", foreground="#666").pack(side="left", padx=(2, 0))
+
         ttk.Label(colR,
-                  text="Mỗi video nguồn cắt 2-3 đoạn ngắn khác nhau. Video con thứ N\n"
-                       "lấy trong khoảng N×bước nhảy (VD 5s: con 1 → 0-5s, con 2 → 5-10s…),\n"
-                       "hết video thì quay lại từ đầu — nên không trùng đoạn đã cắt.",
+                  text="Clip gốc bị CẮT LÌA liên tiếp thành nhiều đoạn dài trong khoảng\n"
+                       "trên; mỗi đoạn chỉ dùng 1 lần. Một video con lấy nhiều đoạn\n"
+                       "video + vài ảnh. Hết đoạn video thì các video sau dùng toàn ảnh.",
                   foreground="#666", justify="left").pack(anchor="w", pady=(2, 0))
 
         f = ttk.Frame(colR); f.pack(fill="x", pady=2)
@@ -1923,10 +1920,10 @@ class App:
                          else str(rep["max_videos"]))
                 line = (f"• [{i}] {name}: {rep['imgs']} ảnh + {rep['vids']} video"
                         f" = {rep['pool']} file → tối đa {n_txt} video")
-                vclip = rep.get("vid_windows", 0)
+                vclip = rep.get("vid_cuts", rep.get("vid_windows", 0))
                 if vclip:
-                    line += (f"; {vclip} video có 1 phân cảnh từ clip gốc, "
-                             f"phần còn lại toàn ảnh")
+                    line += (f"; clip gốc cắt được {vclip} đoạn "
+                             f"(mỗi đoạn dùng 1 lần, hết đoạn thì toàn ảnh)")
                 if rep.get("capped"):
                     line += "  (rất nhiều — chạm trần đếm)"
                 if rep["max_videos"] < n_want and not rep.get("capped"):

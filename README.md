@@ -251,7 +251,7 @@ Video đã có banner sẽ xuất ra tên `..._BN.mp4`, giữ nguyên video gố
 | Đầu vào | Xử lý |
 |---|---|
 | **Ảnh tĩnh** | Ken Burns — zoom/pan ngẫu nhiên (zoom in / out / pan ngang / chéo) + **hiệu ứng màu** |
-| **Video** | Giữ chuyển động gốc, **cắt đoạn ngắn 2.5–4s** trong file (cửa sổ tăng dần 5s/lần dùng), zoom thêm tuỳ chọn, **hiệu ứng màu nhẹ** |
+| **Video** | Giữ chuyển động gốc, **cắt lìa thành đoạn 2.5–4s** (mỗi đoạn dùng 1 lần, phủ hết file), zoom thêm tuỳ chọn, **hiệu ứng màu nhẹ** |
 | **Folder trộn ảnh + video** | **Tự xen kẽ**: video → ảnh → video → ảnh… (đổi cảnh liên tục) |
 | **Giữa các cảnh** | Cắt CỨNG (hard cut) — giống news reel |
 
@@ -281,9 +281,7 @@ Video đã có banner sẽ xuất ra tên `..._BN.mp4`, giữ nguyên video gố
 | Xen kẽ ảnh/video | BẬT | Folder trộn → video/ảnh đổi cảnh liên tục |
 | Số video mỗi folder | 5 | Tạo nhiều video từ cùng 1 folder media |
 | Số luồng song song | 3 | Render nhiều video cùng lúc (nhanh hơn) |
-| Số đoạn mỗi video nguồn | 2–3 | Cắt đoạn ngắn trong 1 file rồi ghép; hết chỗ thì thôi |
-| Độ dài mỗi đoạn | 2.5–4.0s | Đoạn dài hơn; slot hẹp thì lấy trọn slot rồi dừng |
-| Bước nhảy cửa sổ | 5.0s | Lần dùng thứ k cắt trong khung thứ k, hết thì quay vòng |
+| Độ dài mỗi đoạn video | 2.5–4.0s | Clip gốc bị cắt lìa thành các đoạn dài trong khoảng này |
 | Trùng tối đa | 0.5 | **Chỉ áp cho ẢNH** — video nguồn dùng lại được |
 | CRF | 18 | Nhỏ = nét hơn, file to hơn |
 | Preset | veryfast | veryfast ~1.3s/video 15s |
@@ -303,29 +301,27 @@ nhiều video khác nhau:
   video tối đa tạo được**. Nếu ít hơn số anh muốn, tool tự **cảnh báo** và chỉ tạo
   đến mức tối đa (không tạo video vi phạm ràng buộc).
 
-### Mỗi video có đúng 1 phân cảnh từ video gốc
+### Một video con = NHIỀU đoạn video + vài ảnh
 
-Mỗi video con lấy **đúng 1 phân cảnh** từ video gốc, phần còn lại là ảnh. Một
-video nguồn dài 20s cắt được **4 đoạn khác nhau** (cửa sổ 5s) → nuôi được 4 video
-con. **Hết chỗ cắt thì các video con sau chuyển hẳn sang TOÀN ẢNH** — không quay
-vòng lại đoạn cũ để tránh trùng khớp. Số cửa sổ tính theo **từng file** (không
-phải tổng), nên một clip ngắn không bị cắt quá số đoạn của chính nó.
+Clip gốc bị **cắt lìa liên tiếp** thành nhiều đoạn dài 2.5–4s, phủ hết chiều dài
+file (clip 1 phút → ~18 đoạn). **Mỗi đoạn chỉ dùng 1 lần** — không có đoạn nào
+xuất hiện ở 2 video con. Một video con lấy **nhiều đoạn video + vài ảnh**
+(mặc định 60–85% số cảnh là video), nên video ra có chuyển động liên tục thay vì
+1 đoạn video rồi toàn ảnh.
 
-### Cắt video nguồn: đoạn 2.5–4s, cửa sổ tăng dần
+**Hết đoạn video thì các video con sau chuyển hẳn sang TOÀN ẢNH** — không quay
+vòng lại đoạn cũ. Ví dụ: 10 ảnh + 1 clip 97s → 39 đoạn → 11 video con dùng hết
+đoạn video, các video sau đó toàn ảnh.
 
-Mỗi cảnh video **cắt đoạn 2.5–4s** trong file nguồn (muốn 2–3 đoạn ghép lại thì
-đặt số đoạn, nhưng slot cảnh phải đủ chỗ). Slot hẹp hơn mức tối thiểu thì tool
-**lấy trọn slot rồi dừng** — không cắt vụn cho đủ số đoạn, cũng không bù thêm.
+### Cắt video nguồn: đoạn 2.5–4s, cắt lìa liên tiếp
 
-**Bước nhảy cửa sổ** (mặc định 5s) quyết định lấy đoạn ở khúc nào của video nguồn:
+Con trỏ cắt chạy **tuần tự từ đầu file tới hết**: đoạn 1 = `0–3.2s`, đoạn 2 =
+`3.2–6.5s`, đoạn 3 = `6.5–10.1s`… Độ dài mỗi đoạn ngẫu nhiên trong khoảng đã đặt
+(2.5–4s). Đoạn cuối cùng sát đuôi file có thể ngắn hơn — vẫn dùng, không bỏ phí.
 
-- Video con thứ 1 dùng file X → cắt trong `0–5s`
-- Video con thứ 2 dùng lại file X → cắt trong `5–10s`
-- Video con thứ 3 → `10–15s` … cứ thế **tăng dần**
-- Hết chiều dài video → **ngừng dùng file đó**, các video con sau chuyển toàn ảnh
-
-Nhờ vậy hai video con không bao giờ cắt đúng khớp cùng một đoạn, dù dùng chung
-file nguồn. Độ dài mỗi đoạn vẫn ngẫu nhiên trong khoảng đã đặt (2.5–4s).
+**Đoạn nào ra đoạn nấy, đúng độ dài**: cảnh video được cắt **đúng bằng** độ dài
+đoạn đã chia, không kéo dài/thu ngắn cho vừa slot. Nhờ vậy video ra dài **chính
+xác 15.000s** và dùng hết đoạn video có trong file nguồn.
 
 **Đọc được cả ảnh `.jpe` / `.jfif`** (biến thể JPEG của một số máy ảnh và trang
 tin), kể cả khi đuôi viết HOA.

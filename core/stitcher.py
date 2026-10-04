@@ -28,6 +28,11 @@ try:
 except ImportError:  # chạy trực tiếp
     import facedetect
 
+try:
+    from .cutpool import CutPool, plan_cuts
+except ImportError:  # chạy trực tiếp
+    from cutpool import CutPool, plan_cuts
+
 
 class StitchError(Exception):
     pass
@@ -147,6 +152,21 @@ def video_window_quota(vids, ffprobe, win):
 def video_window_total(quota):
     """Tổng số cửa sổ cắt còn lại (dùng để báo cho người dùng)."""
     return sum(max(0, int(v)) for v in (quota or {}).values())
+
+
+def video_cut_budget(vids, ffprobe, d_min=2.5, d_max=4.0):
+    """Số ĐOẠN CẮT được của TỪNG video nguồn -> {tên file: số đoạn}.
+
+    Khác `video_window_quota` (đếm cửa sổ CỐ ĐỊNH rồi mỗi video con lấy 1 cửa
+    sổ): ở đây video gốc được CẮT LIA LIÊN TIẾP thành các đoạn dài ~d_min..d_max
+    và MỖI ĐOẠN CHỈ DÙNG 1 LẦN. Con số này dùng để báo cho người dùng biết còn
+    đủ video cho bao nhiêu cảnh; việc cắt thật do CutPool làm theo độ dài slot.
+    """
+    out = {}
+    for p in vids:
+        d = probe_duration(p, ffprobe)
+        out[p.name] = plan_cuts(d, d_min, d_max, 30.0) if d > 0.1 else 1
+    return out
 
 
 def pick_items_excluding(imgs, vids, n_min, n_max, use_all, rng,
@@ -327,25 +347,165 @@ def pick_items_excluding(imgs, vids, n_min, n_max, use_all, rng,
 
 
 
-def interleave_media(picked, rng):
-    """Xen kẽ video và ảnh: video → ảnh → video → ảnh ... (đổi cảnh liên tục).
+def pick_scene_items(imgs, vids, n_vid, n_img, rng, cutpool,
+                     prev_sets=None, max_overlap=0.5, strict=False,
+                     spread=True, fps=30.0, min_slot=1.0):
+    """Chọn media cho 1 video con: `n_vid` cảnh VIDEO + `n_img` cảnh ẢNH.
 
-    Nếu chỉ có 1 loại thì giữ nguyên thứ tự ngẫu nhiên.
+    LUẬT MỚI (v1.20.0): video gốc được CẮT LIA thành nhiều đoạn, mỗi đoạn dùng
+    1 lần -> MỘT video con có thể dùng NHIỀU đoạn (thường 5-6). Vì vậy CÙNG MỘT
+    file video nguồn có thể xuất hiện nhiều lần trong danh sách trả về — mỗi
+    lần là một đoạn khác nhau (CutPool.take cắt tuần tự, không lặp).
+
+    Trần trùng 50% CHỈ áp cho ẢNH (giữ nguyên hành vi cũ).
+
+    Trả về list [(Path, is_video), ...] độ dài n_vid + n_img, hoặc None nếu
+    strict=True và không chọn đủ.
     """
-    vids = [p for p in picked if p.suffix.lower() in VID_EXT]
-    imgs = [p for p in picked if p.suffix.lower() not in VID_EXT]
-    if not vids or not imgs:
-        return list(picked)
-    out = []
-    # bắt đầu bằng loại có nhiều hơn 1 chút để tránh hết sớm
-    start_vid = len(vids) >= len(imgs)
-    a, b = (vids, imgs) if start_vid else (imgs, vids)
-    while a or b:
-        if a:
-            out.append(a.pop(0))
-        if b:
-            out.append(b.pop(0))
-    return out
+    rng = rng or random.Random()
+    n_vid = max(0, int(n_vid))
+    n_img = max(0, int(n_img))
+    if n_vid + n_img <= 0:
+        return None if strict else []
+
+    prev = [set(p) for p in (prev_sets or [])]
+    ovl = float(max_overlap)
+    img_pool = [p for p in imgs]
+    img_bit = {p.name: i for i, p in enumerate(img_pool)}
+
+    prev_masks = []
+    for s in prev:
+        m, cnt = 0, 0
+        for name in s:
+            if Path(name).suffix.lower() in IMG_EXT:
+                cnt += 1
+                b = img_bit.get(name)
+                if b is not None:
+                    m |= (1 << b)
+        prev_masks.append((m, cnt))
+
+    def overlap_ok(mask, cnt):
+        for pm, pc in prev_masks:
+            lim = int(math.floor(min(cnt, pc) * ovl))
+            if (mask & pm).bit_count() > lim:
+                return False
+        return True
+
+    usage = {}
+    for s in prev:
+        for name in s:
+            usage[name] = usage.get(name, 0) + 1
+
+    # ── chọn ẢNH (có ràng buộc trùng) ───────────────────────
+    def draw_imgs(k):
+        if k <= 0:
+            return [], 0
+        if k > len(img_pool):
+            return None, None
+        w = [rng.uniform(0.75, 1.25) / (1.0 + usage.get(p.name, 0))
+             for p in img_pool]
+        got = _sample_weighted(img_pool, k, w, rng) if spread else rng.sample(img_pool, k)
+        m = 0
+        for p in got:
+            m |= (1 << img_bit[p.name])
+        return got, m
+
+    got_i = None
+    if n_img > 0:
+        for _ in range(_TRIES):
+            gi, m = draw_imgs(n_img)
+            if gi is None:
+                break
+            if overlap_ok(m, len(gi)):
+                got_i = gi
+                break
+        if got_i is None:
+            if strict:
+                return None
+            # nới: lấy tập ít vi phạm nhất
+            best, best_bad = None, None
+            for _ in range(_TRIES):
+                gi, m = draw_imgs(n_img)
+                if gi is None:
+                    break
+                bad = 0
+                for pm, pc in prev_masks:
+                    lim = int(math.floor(min(len(gi), pc) * ovl))
+                    bad += max(0, (m & pm).bit_count() - lim)
+                if best is None or bad < best_bad:
+                    best, best_bad = gi, bad
+                    if bad == 0:
+                        break
+            got_i = best if best is not None else []
+    else:
+        got_i = []
+
+    # ── chọn VIDEO: bốc theo số giây CÒN LẠI (file dài dùng nhiều hơn) ──
+    got_v = []
+    if n_vid > 0:
+        cands = [p for p in vids if cutpool and cutpool.has_any(min_slot)
+                 and cutpool.remaining_sec(p.name) >= min_slot - 1e-6]
+        if not cands:
+            if strict:
+                return None
+            return None
+        for _ in range(n_vid):
+            live = [p for p in cands
+                    if cutpool.remaining_sec(p.name) >= min_slot - 1e-6]
+            if not live:
+                break
+            # trọng số = số giây còn lại (file dài được dùng nhiều đoạn hơn),
+            # nhân thêm hệ số ít-dùng để rải đều giữa các file cùng độ dài.
+            ws = [(cutpool.remaining_sec(p.name) ** 1.2) /
+                  (1.0 + 0.35 * usage.get(p.name, 0)) for p in live]
+            pick = _sample_weighted(live, 1, ws, rng)[0]
+            got_v.append(pick)
+            usage[pick.name] = usage.get(pick.name, 0) + 1
+
+    if n_vid > 0 and not got_v:
+        if strict:
+            return None
+
+    items = [(p, False) for p in got_i] + [(p, True) for p in got_v]
+    rng.shuffle(items)
+    return items
+
+
+def split_vid_img(n_scenes, n_imgs, n_vid_slots, rng, vid_ratio=(0.6, 0.85)):
+    """Chia `n_scenes` cảnh thành bao nhiêu cảnh VIDEO và bao nhiêu cảnh ẢNH.
+
+    Đo từ video mẫu user gửi: 8 cảnh = 6-7 đoạn video + 1-2 ảnh -> video chiếm
+    ĐA SỐ (75-88%). Nhưng không được vượt số đoạn video còn cắt được
+    (`n_vid_slots`) và không vượt số ảnh có trong pool (`n_imgs`).
+
+    n_scenes: tổng số cảnh của video con.
+    n_imgs: số ẢNH thật có trong pool.
+    n_vid_slots: số đoạn video còn cắt được (CutPool.video_slots_left).
+    vid_ratio: khoảng tỉ lệ cảnh video mong muốn (mặc định 60-85%).
+
+    Trả về (n_vid, n_img) với n_vid + n_img == n_scenes (trừ khi pool quá thiếu).
+    """
+    n_scenes = max(0, int(n_scenes))
+    if n_scenes <= 0:
+        return 0, 0
+    n_imgs = max(0, int(n_imgs))
+    n_vid_slots = max(0, int(n_vid_slots))
+
+    lo_r, hi_r = float(vid_ratio[0]), float(vid_ratio[1])
+    lo_r = min(max(0.0, lo_r), 1.0)
+    hi_r = min(max(lo_r, hi_r), 1.0)
+    n_vid = int(round(n_scenes * rng.uniform(lo_r, hi_r)))
+    n_vid = max(0, min(n_vid, n_vid_slots, n_scenes))
+    # Giữ tối thiểu 1 cảnh video khi còn đoạn (video mẫu luôn có video).
+    if n_vid_slots > 0 and n_vid == 0:
+        n_vid = 1
+    n_img = n_scenes - n_vid
+    # Không đủ ảnh -> bù bằng video (nếu còn đoạn).
+    if n_img > n_imgs:
+        need = n_img - n_imgs
+        n_vid = min(n_scenes, n_vid + min(need, n_vid_slots - n_vid))
+        n_img = n_scenes - n_vid
+    return n_vid, n_img
 
 
 def distribute_frames(total_frames, n, rng, lo_frames, hi_frames, weights=None):
@@ -634,33 +794,38 @@ class Stitcher:
         if prev_sets is None:
             prev_sets = []
         plans = []
-        use = {}                      # {tên file: số lần đã dùng} -> cửa sổ cắt
         segs_used = {}                # {tên file: set đoạn đã cắt} -> không trùng
-        # SỐ PHÂN CẢNH VIDEO GỐC còn dùng được của TỪNG video nguồn. Mỗi video
-        # con lấy ĐÚNG 1 đoạn, nên khi hết ngân sách thì các video con sau tự
-        # chuyển sang TOÀN ẢNH — không quay vòng lại đoạn cũ (người dùng yêu
-        # cầu: "hết phân cảnh video đầu vào thì sẽ lấy full ảnh").
+        # ── NGÂN SÁCH ĐOẠN CẮT DÙNG CHUNG CẢ CHUỖI (v1.20.0) ─────────────
+        # Một CutPool duy nhất cho cả folder: con trỏ cắt của mỗi video nguồn
+        # chỉ tiến, nên đoạn đã dùng ở video con trước KHÔNG BAO GIỜ được dùng
+        # lại. Hết sạch đoạn -> các video con sau tự chuyển sang TOÀN ẢNH
+        # (đúng yêu cầu người dùng). Dùng bản CLONE cho mỗi lần thử để nhánh
+        # thử thất bại không ăn mất đoạn video.
         _imgs, _vids = list_media(folder, cfg.get("recursive", False))
-        vq = video_window_quota(_vids, self.ffprobe,
-                                cfg.get("seg_window", 5.0))
+        cut_pool = CutPool(self._video_durations(_vids))
         for _ in range(max(0, int(n_videos))):
             plan = None
             for _a in range(max(1, int(attempts))):
+                trial = cut_pool.clone()
                 plan = self.plan_folder(folder, prev_sets=prev_sets,
                                         max_overlap=max_overlap, strict=True,
                                         spread=True, fixed_n=fixed_n,
-                                        prev_use=use, prev_segs=segs_used,
-                                        vid_left=vq)
+                                        prev_segs=segs_used,
+                                        cut_pool=trial)
                 if plan is not None:
+                    cut_pool = trial        # chốt: giữ đoạn đã cắt
                     break
             if plan is None and fallback_n and fallback_n != fixed_n:
                 for _a in range(max(1, int(attempts))):
+                    trial = cut_pool.clone()
                     plan = self.plan_folder(folder, prev_sets=prev_sets,
                                             max_overlap=max_overlap,
                                             strict=True, spread=True,
-                                            fixed_n=fallback_n, prev_use=use,
-                                            prev_segs=segs_used, vid_left=vq)
+                                            fixed_n=fallback_n,
+                                            prev_segs=segs_used,
+                                            cut_pool=trial)
                     if plan is not None:
+                        cut_pool = trial
                         break
             if plan is None:
                 if stop_on_fail:
@@ -668,15 +833,6 @@ class Stitcher:
                 continue
             names = [s["path"].name for s in plan["scenes"]]
             prev_sets.append(names)
-            for nm in names:
-                use[nm] = use.get(nm, 0) + 1
-            # Tiêu 1 cửa sổ của ĐÚNG video nguồn đã dùng (ngân sách theo từng
-            # file). Nếu trừ chung một biến tổng thì 1 video ngắn có thể bị cắt
-            # nhiều hơn số cửa sổ của nó -> đoạn cuối kẹp vào đuôi, trùng nhau.
-            for s in plan["scenes"]:
-                if s["kind"] == "video":
-                    k = s["path"].name
-                    vq[k] = max(0, int(vq.get(k, 0)) - 1)
             for nm, st in (plan.get("segs_used") or {}).items():
                 segs_used[nm] = st
             plans.append(plan)
@@ -766,11 +922,16 @@ class Stitcher:
                 "max_videos": best, "best_n": best_n,
                 "n_min": lo, "n_max": hi,
                 "max_overlap": float(max_overlap),
-                # số video con tối đa có 1 phân cảnh lấy từ video gốc (hết ngân
-                # sách cửa sổ cắt thì các video con sau chuyển sang toàn ảnh)
-                "vid_windows": video_window_total(
-                    video_window_quota(vids, self.ffprobe,
-                                       cfg.get("seg_window", 5.0))),
+                # số ĐOẠN CẮT còn dùng được từ video gốc (mỗi đoạn dùng 1 lần;
+                # hết đoạn thì các video con sau chuyển sang toàn ảnh)
+                "vid_cuts": sum(video_cut_budget(
+                    vids, self.ffprobe,
+                    cfg.get("seg_dur_min", 2.5),
+                    cfg.get("seg_dur_max", 4.0)).values()),
+                "vid_windows": sum(video_cut_budget(
+                    vids, self.ffprobe,
+                    cfg.get("seg_dur_min", 2.5),
+                    cfg.get("seg_dur_max", 4.0)).values()),
                 "capped": best >= sim_limit}
 
 
@@ -779,7 +940,7 @@ class Stitcher:
     # ── public ─────────────────────────────────────────────
     def plan_folder(self, folder, prev_sets=None, max_overlap=0.5, strict=False,
                     spread=True, fixed_n=None, prev_use=None, prev_segs=None,
-                    vid_left=None):
+                    vid_left=None, cut_pool=None):
         """Lập kế hoạch render (chưa encode) — chạy tuần tự để giữ ràng buộc
         không trùng media giữa các video cùng folder.
 
@@ -789,8 +950,11 @@ class Stitcher:
         các file cùng mức dùng).
         fixed_n: ép cỡ cảnh (dùng khi đếm số video tối đa / để con số báo
         trước khớp với số render thật).
-        prev_use: dict {tên file: số lần đã dùng} — quyết định CỬA SỔ thời gian
-        sẽ cắt trong mỗi video nguồn (xem _split_window).
+        prev_use: dict {tên file: số lần đã dùng} — giữ để tương thích.
+        cut_pool: CutPool — ngân sách ĐOẠN CẮT dùng chung cả chuỗi (v1.20.0).
+        Truyền vào thì video gốc được CẮT LIA thành nhiều đoạn, mỗi đoạn dùng
+        1 lần, MỘT video con dùng NHIỀU đoạn (luật mới). Không truyền thì tự
+        dựng CutPool từ các video trong folder.
         """
         cfg = self.cfg
         rng = random.Random(cfg.get("seed"))
@@ -808,115 +972,115 @@ class Stitcher:
         if not imgs and not vids:
             raise StitchError("Folder không có ảnh/video hợp lệ: %s" % folder)
 
-        # ĐOẠN CẮT VIDEO phải dài >= seg_dur_min -> slot cảnh cũng phải >= mức đó.
-        # Nên khi folder có video: (a) giảm số cảnh tối đa cho vừa `total`,
-        # (b) nâng sàn độ dài cảnh lên seg_dur_min. Không làm thì 15s/7 cảnh
-        # = 2.1s/cảnh -> không thể có đoạn 2.5-4s.
+        # ── LUẬT MỚI (v1.20.0): CẮT LÌA video gốc thành NHIỀU ĐOẠN ───────
+        # Mỗi đoạn chỉ dùng 1 lần; MỘT video con dùng NHIỀU đoạn (đo từ video
+        # mẫu user gửi: 8 cảnh = 6-7 đoạn video + 1-2 ảnh). Hết đoạn video ->
+        # các video con sau dùng TOÀN ẢNH.
         n_min_cfg = int(cfg.get("n_min", 5))
         n_max_cfg = int(cfg.get("n_max", 7))
-        lo_sec = float(cfg.get("min_clip", 1.2))
         segmin = float(cfg.get("seg_dur_min", 0.0) or 0.0)
-        if vids and segmin > 0:
-            lo_sec = max(lo_sec, segmin)
-            # Chỉ cần đủ cảnh để mỗi slot chứa nổi 1 đoạn >= seg_dur_min.
-            # KHÔNG ép thêm số cảnh: thiếu chỗ thì đoạn ngắn lại rồi dừng.
-            fit = int(total // segmin)
-            if fit >= 1:
-                n_max_cfg = max(1, min(n_max_cfg, fit))
-                n_min_cfg = max(1, min(n_min_cfg, n_max_cfg))
-
-        items = pick_items_excluding(
-            imgs, vids, n_min_cfg, n_max_cfg,
-            cfg.get("use_all", False), rng,
-            prev_sets=prev_sets, max_overlap=max_overlap, strict=strict,
-            spread=spread, fixed_n=fixed_n, vid_quota=vid_left)
-        if items is None:
-            return None
-        if not items:
-            raise StitchError("Không chọn được file nào.")
-        # có cả ảnh lẫn video -> xen kẽ để đổi cảnh liên tục (video → ảnh → ...)
-        if cfg.get("interleave", True):
-            items = interleave_media(items, rng)
-
-        durations = []
-        for p in items:
-            if p.suffix.lower() in VID_EXT:
-                d = probe_duration(p, self.ffprobe)
-                if d <= 0.05:
-                    d = 0.0
-                durations.append(d)
-            else:
-                durations.append(None)   # ảnh: không giới hạn
-
         lo_frames = max(1, int(round(float(cfg.get("min_clip", 1.2)) * fps)))
         max_clip = float(cfg.get("max_clip", 4.0))
         hi_frames = max(lo_frames, int(round(max_clip * fps)))
         # Có video -> sàn cảnh = seg_dur_min để slot đủ chỗ cho 1 đoạn dài
-        # đúng mức tối thiểu người dùng đặt (2.5s). KHÔNG ép thêm số đoạn.
+        # đúng mức tối thiểu người dùng đặt (2.5s).
         if vids and segmin > 0:
             lo_frames = max(lo_frames, int(round(segmin * fps)))
             hi_frames = max(lo_frames, hi_frames)
 
-        slots = distribute_frames(total_frames, len(items), rng, lo_frames, hi_frames)
-        slots = self._fit_to_media(slots, items, durations, fps, lo_frames)
+        if cut_pool is None:
+            cut_pool = CutPool(self._video_durations(vids))
+
+        slot_sec = lo_frames / float(fps)
+        n_slots = cut_pool.video_slots_left(slot_sec) if vids else 0
+        if fixed_n:
+            n_scenes = max(1, int(fixed_n))
+        else:
+            n_scenes = rng.randint(max(1, n_min_cfg), max(1, n_max_cfg))
+        # Trần số cảnh khả thi: ảnh có sẵn + số đoạn video còn cắt được.
+        n_scenes = max(1, min(n_scenes, max(1, len(imgs) + n_slots)))
+        if not imgs and n_slots == 0:
+            return None
+
+        n_vid, n_img = split_vid_img(n_scenes, len(imgs), n_slots, rng,
+                                     cfg.get("vid_ratio", (0.6, 0.85)))
+        n_scenes = n_vid + n_img
+        if n_scenes <= 0:
+            return None
+
+        items = pick_scene_items(
+            imgs, vids, n_vid, n_img, rng, cut_pool,
+            prev_sets=prev_sets, max_overlap=max_overlap, strict=strict,
+            spread=spread, fps=fps, min_slot=slot_sec)
+        if items is None and not strict and imgs:
+            # Hết đoạn video -> dùng TOÀN ẢNH (đúng yêu cầu người dùng).
+            items = pick_scene_items(
+                imgs, [], 0, min(n_scenes, len(imgs)), rng, cut_pool,
+                prev_sets=prev_sets, max_overlap=max_overlap, strict=False,
+                spread=spread, fps=fps, min_slot=slot_sec)
+        if items is None:
+            return None
+        if not items:
+            raise StitchError("Không chọn được file nào.")
+
+        slots = distribute_frames(total_frames, len(items), rng,
+                                  lo_frames, hi_frames)
+        # Con trỏ cắt chạy TUẦN TỰ nên nhiều cảnh có thể dùng chung 1 file
+        # video: phải trừ dần số giây đã lấy mới biết cảnh này còn được bao
+        # nhiêu. Lặp vài vòng cho hội tụ (slot ngắn lại thì nhường giây cho
+        # cảnh sau cùng file).
+        for _ in range(4):
+            avail, vpos = [], {}
+            for (p, is_v), fr in zip(items, slots):
+                if is_v:
+                    rem = max(0.0, cut_pool.remaining_sec(p.name)
+                              - vpos.get(p.name, 0.0))
+                    avail.append(rem)
+                    vpos[p.name] = vpos.get(p.name, 0.0) + min(fr / float(fps), rem)
+                else:
+                    avail.append(None)      # ảnh: không giới hạn
+            new_slots = self._fit_to_media(slots, [p for p, _ in items],
+                                           avail, fps, lo_frames)
+            if new_slots == slots:
+                break
+            slots = new_slots
 
         # tham số ngẫu nhiên cho từng cảnh — sinh Ở ĐÂY (tuần tự) để phần render
         # chạy song song vẫn tất định, không phụ thuộc thứ tự luồng
-        win = float(cfg.get("seg_window", 5.0)) or 5.0
-        use = dict(prev_use or {})
-        # Đoạn cắt đã dùng cho mỗi video nguồn (theo tên file) — xuyên suốt cả
-        # chuỗi video con, để không video con nào cắt trùng khớp đoạn của video
-        # con trước. prev_segs: dict {tên file: set((giây, frame), ...)}.
         segs_used = {}
         for kk, vv in (prev_segs or {}).items():
             segs_used[kk] = set(vv)
         scenes = []
-        for p, fr, vdur in zip(items, slots, durations):
-            if p.suffix.lower() in VID_EXT:
+        for (p, is_v), fr in zip(items, slots):
+            if is_v:
                 need = fr / float(fps)
-                # CỬA SỔ CẮT TĂNG DẦN: lần dùng thứ k -> khung [k*win, (k+1)*win].
-                # Hết cửa sổ dùng được thì KHÔNG quay vòng lại đoạn cũ — người
-                # gọi đã chặn từ trước bằng quota (vid_quota), nên video con
-                # sau tự chuyển sang TOÀN ẢNH.
-                key = p.name          # KHỚP key mà plan_sequence dùng để đếm
-                k = use.get(key, 0)
-                use[key] = k + 1
-                w_lo = k * win
-                # KHÔNG VƯỢT SỐ CỬA SỔ CỦA CHÍNH FILE NÀY: video 20s/cửa sổ 5s
-                # chỉ có 4 đoạn khác nhau. Vượt thì khung bị kẹp vào đuôi và
-                # lặp lại đoạn cũ (bug thật: clip 20s bị cắt 6 lần, 2 đoạn cuối
-                # trùng khít). Kẹp về cửa sổ CUỐI cùng của file.
-                nwin = max(1, int(math.ceil(vdur / win))) if vdur > 0.1 else 1
-                if k >= nwin:
-                    k = nwin - 1
-                w_lo = k * win
-                if vdur and vdur > 0.1:
-                    w_hi = min(vdur, w_lo + win)
-                else:
-                    w_lo, w_hi = 0.0, max(win, need)
-                if w_hi - w_lo < need:
-                    w_lo = max(0.0, w_hi - need)
-                segs = _split_window(rng, w_lo, w_hi, need, cfg, fps)
-                # KHÔNG CẮT TRÙNG KHỚP: khi 1 video nguồn được dùng lại ở nhiều
-                # video con, việc quay vòng về cùng một khung có thể bốc ra
-                # ĐÚNG đoạn cũ (gặp thật: 2 video con cùng cắt 1.52s+75f).
-                # Bốc lại cho tới khi khác đoạn đã dùng.
+                # CẮT TUẦN TỰ: lấy `need` giây từ con trỏ của CHÍNH file này.
+                # Mỗi đoạn chỉ dùng 1 lần — con trỏ chỉ tiến, không quay vòng.
+                got = cut_pool.take(p.name, need, fps)
+                if got is None:
+                    # File hết giữa chừng (chỉ xảy ra khi slot bị kéo dài hơn
+                    # dự tính) -> bỏ cảnh video này khỏi kế hoạch.
+                    continue
+                start, nfr = got
+                segs = [(start, nfr)]
                 done = segs_used.setdefault(p.name, set())
                 sig = tuple((round(a, 2), int(b)) for a, b in segs)
                 if set(sig) & done:
+                    # Đoạn này đã dùng ở video con trước -> cắt tiếp về sau.
                     for _t in range(12):
-                        cand = _split_window(rng, w_lo, w_hi, need, cfg, fps)
-                        csig = tuple((round(a, 2), int(b)) for a, b in cand)
-                        if not (set(csig) & done):
-                            segs, sig = cand, csig
+                        got2 = cut_pool.take(p.name, need, fps)
+                        if got2 is None:
+                            break
+                        segs = [(got2[0], got2[1])]
+                        sig = tuple((round(a, 2), int(b)) for a, b in segs)
+                        if not (set(sig) & done):
                             break
                 for x in sig:
                     done.add(x)
-                gs = float(cfg.get("grade_strength", 1.0)) * 0.5
-                grade, kind = _grade_filter(rng, gs)
-                scenes.append({"kind": "video", "path": p, "frames": fr,
+                grade, kind = _grade_filter(rng, float(cfg.get("grade_strength", 1.0)) * 0.5)
+                scenes.append({"kind": "video", "path": p, "frames": nfr,
                                "segs": segs, "start": segs[0][0],
-                               "win": (round(w_lo, 2), round(w_hi, 2)),
+                               "win": (round(start, 2), round(start + need, 2)),
                                "grade": grade, "grade_name": kind})
             else:
                 kb = kenburns_params(rng, cfg.get("kb_min", 1.06), cfg.get("kb_max", 1.18))
@@ -995,6 +1159,18 @@ class Stitcher:
 
 
     # ── internal ───────────────────────────────────────────
+    def _video_durations(self, vids):
+        """Độ dài (giây) của từng video nguồn -> {tên file: giây}."""
+        out = {}
+        for p in vids:
+            try:
+                d = float(probe_duration(p, self.ffprobe))
+            except Exception:
+                d = 0.0
+            if d > 0.05:
+                out[p.name] = d
+        return out
+
     def _fit_to_media(self, slots, items, durations, fps, lo_frames):
         """Video ngắn hơn slot -> cắt slot lại và bù thời gian cho file khác."""
         slots = list(slots)
