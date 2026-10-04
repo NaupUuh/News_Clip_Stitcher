@@ -39,15 +39,18 @@ BASE = Path(__file__).resolve().parent
 VERSION_API = (f"https://api.github.com/repos/{REPO}/contents/version.json"
                f"?ref={BRANCH}")
 VERSION_URL = f"https://raw.githubusercontent.com/{REPO}/{BRANCH}/version.json"
-ZIP_URL = f"https://github.com/{REPO}/archive/refs/heads/{BRANCH}.zip"
+# Dùng API zipball, KHÔNG dùng codeload (archive/refs/heads/...zip):
+# codeload bị CDN cache ~vài phút -> bấm Cập nhật ngay sau khi push sẽ tải
+# bản CŨ (đã gặp thật: zip thiếu models/). API zipball luôn tươi.
+ZIP_URL = f"https://api.github.com/repos/{REPO}/zipball/{BRANCH}"
 COMMITS_URL = (f"https://api.github.com/repos/{REPO}/commits?"
                f"sha={BRANCH}&per_page=20")
 
 # Không bao giờ ghi đè / không copy từ repo về
 KEEP_NAMES = {"config.json", "config.json.bak"}
-KEEP_DIRS = {"output", "__pycache__", "_backup_update", "models",
+KEEP_DIRS = {"output", "__pycache__", "_backup_update",
              ".git", "Test_19A2V", "Test_JPE"}
-KEEP_SUFFIX = {".log", ".bak"}
+KEEP_SUFFIX = {".log", ".bak", ".part"}
 
 TIMEOUT = 25
 
