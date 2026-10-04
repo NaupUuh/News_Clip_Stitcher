@@ -1,0 +1,35 @@
+# =====================================================================
+#  KHÔNG đẩy lên GitHub: cài đặt riêng + KEY + video đã render
+# =====================================================================
+config.json
+config.json.bak
+
+# video render ra
+output/
+*.mp4
+*.mp3
+*.m4a
+*.wav
+
+# model AI tải về (tự tải lại khi chạy)
+models/*.onnx
+
+# sao lưu khi cập nhật
+_backup_update/
+
+# rác Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+
+# ảnh chụp GUI / preview sinh ra khi test
+GUI_v*.png
+PREVIEW_*.png
+
+# folder test cũ
+Test_19A2V/
+Test_JPE/
+
+# log
+*.log

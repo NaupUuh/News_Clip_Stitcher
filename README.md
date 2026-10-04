@@ -1,0 +1,359 @@
+# News Clip Stitcher v1.18.0
+
+Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chuyển động**, kiểu news reel.
+
+## Chạy tool
+
+- **`Mo_An.vbs`** (khuyến nghị) — double-click là chạy, **cửa sổ cmd không bao giờ
+  hiện ra**, kể cả nhấp nháy. Đóng cửa sổ tool → cmd/python tắt sạch theo.
+- **`run.bat`** — cũng chạy ẩn (tự gọi lại chính nó qua VBS). Double-click được.
+- **`run.bat debug`** — chạy **CÓ** cửa sổ cmd để đọc lỗi, và giữ cửa sổ lại nếu
+  tool crash. Dùng khi tool không mở được.
+
+## Ô nhập key Vilao (tab 2)
+
+- Ô **🔑 Key Vilao** ngay dưới hàng chọn AI/Model. Gõ key trực tiếp, bấm
+  **Lưu key** → ghi vào `config.json`, lần sau mở tool không phải gõ lại.
+- **Để trống = đọc từ `.env`** như trước (không đổi hành vi cũ).
+- Key gõ tay có **ưu tiên cao nhất** — hơn cả env và `.env`. Dùng khi đổi key
+  hoặc key mới chưa kịp cập nhật vào `.env`.
+- Ô key **che ký tự**; tích **Hiện** nếu muốn nhìn thấy để kiểm tra.
+- Key **không bao giờ** bị in ra log (chỉ báo "đã lưu"/"đã xoá").
+- Nút **🔑 Kiểm tra key AI** và nút **⟳** (nạp model) đều dùng đúng key trong ô.
+- Chế độ ẩn ghi toàn bộ log ra `%TEMP%\News_Clip_Stitcher_run.log`.
+
+## Giao diện
+
+- **2 tab**: `🎬 1. Nối ảnh + video` và `📰 2. Breaking News`
+- **Mục "2. Thông số video" chỉ để lại thứ hay đổi** (thời lượng, số file/cảnh,
+  3 ô tích). Các thông số đã tối ưu sẵn (FPS, kích thước, zoom ảnh/video, mạnh
+  màu, số đoạn, cảnh ngắn/dài, CRF, preset) gom vào nút
+  **▸ Mở rộng thông số nâng cao** — ẩn mặc định cho bố cục gọn, bấm mở khi cần
+  chỉnh tay, bấm lại để thu gọn.
+- **Thanh hành động + Log ghim ở ĐÁY** cửa sổ → thu nhỏ cửa sổ thế nào nút
+  `BẮT ĐẦU` / `BURN BANNER` vẫn luôn bấm được.
+- Phần thông số **cuộn dọc** được (chuột lăn trong vùng nội dung), các mục dài
+  san thành **2 cột** cho gọn.
+- Cửa sổ tối thiểu `900x560` (nhỏ hơn nữa thì widget bị bóp méo).
+- Cỡ chữ mặc định **11pt** cho dễ đọc.
+
+## Mục 0 — Tin nóng 24h (tab 2)
+
+Lấy tin **đang hot trong 24h** rồi đổ thẳng vào ô tiêu đề banner.
+
+1. Chọn **chủ đề** (Chính trị Mỹ / Thế giới / Kinh tế / Khoa học), **số tin**, **số giờ**
+   - **AI viết lại tiêu đề**: chọn `vilao` (mặc định) / `gemini` / `auto` (thử Vilao
+     trước, lỗi thì tự chuyển Gemini). Key đọc từ env rồi `.env`.
+     Nút **🔑 Kiểm tra key AI** để test key đang chọn.
+     - **Model**: ô **gõ tay** được tên model — Vilao thêm/bớt model liên tục nên
+       tool KHÔNG hardcode danh sách. Bấm **⟳** để nạp danh sách model **sống**
+       từ Vilao (`GET /v1/models`), rồi chọn hoặc gõ tay. Để trống = dùng mặc định.
+       Mặc định: **`deepseek-v4.1-flash`**, dự phòng `gpt-5.6-luna` → `gpt-6-luna`.
+     - Đo thật (8 tin chính trị × 5 vòng = 40 tin, đúng hàm `rewrite_titles`):
+       `deepseek-v4.1-flash` **5.3s** · hook TB **0.700** (92% đạt ≥0.5) ·
+       `gpt-5.6-luna` **95.6s** · hook 0.619 (88%) · `gpt-6-luna` **23.3s**.
+       Cả 3 đều **0 bịa số · 0 lọt tên báo · 0 dòng quá 40 ký tự**.
+   - **Chính trị Mỹ** lọc theo từ khoá (politics / congress / senate / white house / election)
+     và tự loại tin **thể thao** lạc chủ đề (Google News không có mục Politics riêng —
+     mục "Politics" cũ thực ra là feed tổng hợp nên hay dính WNBA/NFL).
+2. Tích **Chấm điểm độ nóng** (mặc định BẬT) nếu muốn tool tự xếp tin đáng làm lên đầu
+3. Bấm **🔄 Lấy tin nóng 24h**
+4. Danh sách tin hiện trong bảng **cuộn được** (lăn chuột hoặc thanh cuộn; kéo ngang được)
+5. Chọn 1 tin → **⬆ Dùng tin này cho banner** (hoặc nháy đúp vào dòng).
+   Bấm 1 dòng để xem **giải thích vì sao tin đó đáng làm**
+6. Bấm **📰 BURN BANNER** như bình thường
+
+Cột trong bảng: **Độ nóng** (`🔥 88 nguồn · Trends`) · **Hook** · **Nguồn** (báo đăng) · **Giờ** (tuổi tin).
+
+### Tiêu đề viết theo hướng HOOK
+
+AI không còn chỉ chia lại tiêu đề — nó viết lại thành tiêu đề truyền hình
+**giật, gây tò mò** theo 4 chiêu: mở đầu tạo sốc (`JUST IN` / `BREAKING` /
+`NOW`), tạo vòng lặp tò mò (dồn phần "được gì" xuống dòng cuối), ngắt nhịp
+bằng `?`/`:`, và đẩy con số/số liệu gây sốc lên trước.
+
+Cột **Hook** chấm 0.00–1.00 (`⚡` = từ 0.75): có từ hook + có ngắt nhịp ( `:` `?` ) + có
+con số cụ thể. **Đây là thước đo nội bộ của tiêu đề, KHÔNG phải dự đoán viral.**
+
+**Chống bịa:** prompt cấm model thêm bất kỳ dữ kiện/số/tên nào không có trong
+tiêu đề gốc, cấm dùng từ khẳng định nguồn tin (`LEAKED`/`REVEALED`/`EXPOSED`)
+khi bản gốc không có. Sau khi viết lại, tool tự kiểm 4 lớp:
+`faith` (mọi từ phải được tiêu đề gốc chống lưng) · `fab_numbers` (số trong
+bài phải có trong tiêu đề gốc) · `strip_source_tail` (bỏ tên báo model tự gắn
+vào cuối) · `_clamp_lines` (ép đúng 3 dòng × 40 ký tự, không tràn khung).
+
+Nếu model trả về y nguyên tiêu đề (quên hook), tool **gọi ép lại 1 lượt**; vẫn
+chưa đạt thì chèn `:` vào dòng 1 — thuần dấu câu, không thêm chữ nào nên không
+thể bịa.
+
+Đo thật 8 tin × 5 vòng: hook TB **0.58** (so với **0.28** khi chỉ chia dòng),
+**85%** tin đạt hook ≥ 0.5, faith TB **0.95**, **0** tin bịa số, **0** dòng
+quá 40 ký tự.
+
+**Banner KHÔNG còn dính nguồn + giờ** (`BBC · 5.8H AGO`) — banner chỉ còn đúng
+tiêu đề. Nguồn/giờ vẫn hiện trong bảng ở tab 2 để anh chọn tin.
+
+Nút phụ:
+
+- **🔑 Kiểm tra key Gemini** — xem key có hợp lệ không (không in key ra)
+- **⬆ Làm video cho TẤT CẢ tin** — burn banner lần lượt cho từng tin trong danh sách
+- **📋 Xuất JSON** — lưu danh sách tin ra file
+- **📂 Mở link gốc** — mở bài báo gốc trên trình duyệt
+
+### Chấm điểm độ nóng — đo được gì, KHÔNG đo được gì
+
+Điểm **0–100** tính từ 3 tín hiệu miễn phí:
+
+- **70% độ phủ báo chí** — đếm số **báo KHÁC NHAU** đưa cùng tin trong 24h
+  (tra Google News RSS, chỉ tính bài thật sự trùng tin). 40+ nguồn là bão hoà.
+- **20% Google Trends** — tin có mặt trong từ khoá trending US hôm nay không
+- **10% độ mới** — tin càng mới càng cao
+
+**NÓI THẲNG — đây KHÔNG phải dự đoán viral:**
+
+- Chỉ đo **mức độ báo chí đưa tin**, không đo **người xem**. Muốn dự đoán viral
+  phải có view/watch-time của video anh đã đăng — hiện chưa thu được.
+- Facebook / X / TikTok **chặn hết** API số view/like/share miễn phí
+  (Reddit 403, Bluesky 403, YouTube feed 500/404 — đã thử thật 2026-10-03).
+- **Trần chính trị trên Facebook**: Meta hạ recommend video chính trị Mỹ với
+  người chưa follow → trần viral thấp bất kể tin nóng cỡ nào.
+- Điểm cao = **"đáng làm"**, KHÔNG PHẢI "sẽ viral".
+
+Google Trends chi tiết (interest over time) bị 429/400 — cần `pytrends` + proxy
+trả phí. Chỉ dùng được bản daily RSS (10 từ khoá/ngày, miễn phí).
+
+
+### Nguồn tin lấy từ đâu
+
+**Google News RSS** — miễn phí, **không cần key**, có **giờ đăng thật**
+(độ mới `0.7h`, `1.9h`… tính từ lúc đăng). Đây mới là chỗ có tin thật.
+
+**Gemini** chỉ làm 2 việc: **chia tiêu đề thành 3 dòng ngắn** (≤ ~25 ký tự/dòng
+cho vừa thanh trắng) và **gợi ý từ khoá ảnh**. Gemini **KHÔNG được phép thêm tin
+nào ngoài danh sách RSS** — nếu không siết, nó tự bịa tin từ trí nhớ.
+
+### Key Gemini
+
+Đọc theo thứ tự, **không bao giờ in giá trị key ra log**:
+
+1. biến môi trường `GEMINI_API_KEY` / `GOOGLE_API_KEY` / `GOOGLE_GENAI_API_KEY`
+2. file `.env` (`C:\Users\Admin\AppData\Local\hermes\.env`)
+3. `config.json` của tool `Video_Highlight_Finder` (khoá `gemini_keys`)
+4. `config.json` của chính tool này
+
+**Không có key vẫn dùng được**: tool tự chia dòng bằng code nội bộ, giữ nguyên
+tiêu đề gốc từ RSS.
+
+### Giới hạn đã đo thật
+
+- **Grounding (Gemini tự đi tìm tin trên Google)** → **429 với key này**, không
+  dùng được. Đó là lý do phải lấy tin từ RSS.
+- **Gemini gọi dồn dập sẽ nghen** (429) ở request thứ 2. Tool tự **nghỉ 10 giây**
+  giữa các request và **đổi model** khi bị 429/503.
+- Model khả dụng đo được: `gemini-3.5-flash-lite`, `gemini-3.5-flash`,
+  `gemini-flash-latest`, `gemini-2.0-flash-lite`… (Gemini 2.5 đã bị khai tử với key này).
+
+## Cách dùng
+
+1. Chạy `run.bat`
+2. **Thêm folder** — mỗi folder = 1 video đầu ra
+   - `Thêm folder cha (batch)`: trỏ vào folder cha, mỗi folder con = 1 video
+3. Bấm **🎬 BẮT ĐẦU**
+4. Video lưu vào thư mục ở mục 4 (mặc định `output/`)
+
+## Tab 2 — Breaking News (chèn banner)
+
+Sau khi có video ở tab 1, chuyển sang tab **📰 2. Breaking News**:
+
+1. **Thêm folder** chứa video đã render (quét cả folder con nếu cần)
+2. **Sửa chữ trực tiếp** trên banner:
+   - `Ô đỏ` — chữ trong ô đỏ (mặc định `BREAKING NEWS`)
+   - `Chữ trắng (tiêu đề)` — **tiêu đề tin, anh gõ gì cũng được**
+   - `Logo` + checkbox hiện/ẩn
+3. **Chữ CTA — “FULL STORY IN THE FIRST COMMENT”** (mục 2b): mặc định
+   `FULL STORY IN` / `THE FIRST COMMENT`, chữ vàng `#ECFA1E` viền đen, căn giữa,
+   **nằm ở ĐẦU video** (đo từ ảnh mẫu: đỉnh 4.94%H, cao 1 dòng 4.31%H, rộng 62.8%W).
+   **Chỉ hiện N giây cuối** (mặc định 3s) — tắt được.
+4. **Vị trí & kích thước** — tỉ lệ khung, nút `↺ Về mặc định` trả về đúng video mẫu
+5. **Khung MC "NEWS"** (mục 5) — xem bên dưới
+6. **Màu** (hex) cho từng thành phần
+7. `👁 Xem trước` xem 1 frame, `📰 BURN BANNER` chạy hàng loạt (đa luồng)
+
+### Mục 5 — Khung MC "NEWS" (PiP trên banner)
+
+Khung nhỏ chứa **người dẫn (MC)** nằm **ngay TRÊN** khung BREAKING NEWS, có
+nhãn đỏ `NEWS` ở góc trên-trái — giống layout CNN.
+
+- **Ô tích `Có MC → bật khung trên banner`**: tích = có khung MC, bỏ tích = không khung.
+  Chọn xong file MC thì ô này **tự tích**, khỏi phải tích tay.
+- **Ảnh/video MC**: chọn **từng lần chạy** bằng nút `📄` (cố ý KHÔNG lưu vào
+  config — mở tool lên ô luôn trống để anh chọn file mới).
+- **Hoặc folder MC**: trỏ vào folder nhiều MC → **mỗi video bốc ngẫu nhiên 1 file**.
+- **Cắt lề nguồn (4 cạnh)**: cắt bớt viền ảnh/video nguồn trước khi đưa vào khung.
+  Mặc định **cắt 16% đáy** để che watermark `DreamFace / Animated with AI`
+  của app tạo video MC (đo trên video 538×720: chữ nằm ở y 86.5%–96.4%).
+- **Ảnh MC luôn được COVER + crop** → bó cứng trong khung, **không méo, không tràn**.
+- **Tự neo ngay trên banner**: khung MC luôn bám sát mép trên thanh đỏ, banner
+  đổi vị trí cỡ nào khung vẫn nằm trên, không bao giờ đè lên.
+- Nếu bật khung mà **quên chọn MC**, tool hỏi ngay trước khi burn hàng loạt.
+
+Thông số (tỉ lệ khung hình, tự scale mọi độ phân giải):
+- Khung MC: `x 0.012` · `w 0.325` · `h 0.198` · viền `0.028` màu `#0A1E69`
+- Nhãn `NEWS`: nền `#CC0000`, chữ trắng, **dính sát góc trên-trái** khung MC,
+  toạ độ **tỉ lệ trong khung MC**: `x 0.014` · `y 0.012` · `w 0.370` · `h 0.100`
+  (đo từ ảnh mẫu: lề trái ~2%, đỉnh ~1.4%, cao ~10% chiều cao khung)
+- Khe hở khung MC ↔ banner: `0.008`
+
+**Vị trí đo từ video mẫu** (khung 360x640, tự scale theo độ phân giải):
+- Ô đỏ `x24 y471 w124 h28` → tỉ lệ `x0.0667 y0.7359 w0.3444 h0.0437`
+- Ô trắng `x28 y499 w308 h37` → tỉ lệ `x0.0778 y0.7797 w0.8556 h0.0578`
+- CTA 2 dòng `y4.94%..15.34%H` → tỉ lệ `cta_y0.0494 h0.0862` (khối 2 dòng), khe `0.44`, bóp ngang `0.873`
+- Chừa **105px (16.4% H)** dưới đáy = vùng an toàn cho caption/subtitle của nền tảng
+
+Video đã có banner sẽ xuất ra tên `..._BN.mp4`, giữ nguyên video gốc.
+
+## Cách hoạt động
+
+| Đầu vào | Xử lý |
+|---|---|
+| **Ảnh tĩnh** | Ken Burns — zoom/pan ngẫu nhiên (zoom in / out / pan ngang / chéo) + **hiệu ứng màu** |
+| **Video** | Giữ chuyển động gốc, **cắt đoạn ngắn 2.5–4s** trong file (cửa sổ tăng dần 5s/lần dùng), zoom thêm tuỳ chọn, **hiệu ứng màu nhẹ** |
+| **Folder trộn ảnh + video** | **Tự xen kẽ**: video → ảnh → video → ảnh… (đổi cảnh liên tục) |
+| **Giữa các cảnh** | Cắt CỨNG (hard cut) — giống news reel |
+
+- Tổng thời lượng **chính xác** (mặc định 15.000s = 450 frames @30fps)
+- Số cảnh, độ dài mỗi cảnh, thứ tự, hướng chuyển động và **kiểu màu** đều **random mỗi lần render** → tránh bị coi là mass-produced
+- Ảnh mọi tỉ lệ (16:9, 9:16, 1:1, dọc dài…) đều được cover-crop, **không bao giờ có viền đen**
+- **Tự canh mặt khi crop (ảnh + video)** — ảnh/video ngang (16:9, 4:3) crop sang 9:16 chỉ giữ ~35-45% chiều ngang, nên tool tự tìm mặt chủ thể rồi đặt tâm crop vào đó → **không bị cắt mất mặt, không lấy lệch khỏi nhân vật chính**. Tắt được bằng checkbox.
+  - **Ảnh:** chọn mặt theo điểm tổng hợp (diện tích × độ tin cậy × độ gần tâm) → mặt nhỏ ở góc ảnh không kéo khung crop ra khỏi chủ thể.
+  - **Video:** lấy mẫu 3 frame (30%/50%/70% đoạn cắt) rồi lấy **trung vị** tâm mặt → không trượt khi nhân vật quay đi/che tay. Video nguồn **đã đúng tỉ lệ khung** (9:16) thì bỏ qua bước này vì crop không cắt gì.
+  - Box có độ tin cậy < 0.60 bị loại (đo thật: YuNet hay nhận bàn tay/cử chỉ thành mặt ở mức ~0.5x).
+- Ảnh gốc nét (≥1.4x khung) được render nội bộ 2x rồi hạ xuống → nét hơn ~23%
+
+## Thông số
+
+| Thông số | Mặc định | Ý nghĩa |
+|---|---|---|
+| Thời lượng | 15s | Tổng độ dài video, luôn chính xác |
+| FPS | 30 | |
+| Kích thước | 1080x1920 | 9:16 dọc |
+| Số file/cảnh | 5–7 | 5–7 file → ~2.1–3s mỗi cảnh cho 15s |
+| Độ dài cảnh | 1.4–4.0s | Tự nới nếu folder ít/quá nhiều file |
+| Zoom ảnh | 1.06–1.18 | Mức zoom Ken Burns |
+| Zoom video | 0.05 | Zoom thêm cho video (0 = giữ nguyên) |
+| Canh mặt | BẬT | Tự đặt tâm crop vào mặt chủ thể |
+| Hiệu ứng màu | BẬT | Áp tông màu ngẫu nhiên cho từng cảnh (8 kiểu + vignette) |
+| Mạnh màu | 1.0 | 0 = nhẹ nhất, 1.5 = đậm |
+| Xen kẽ ảnh/video | BẬT | Folder trộn → video/ảnh đổi cảnh liên tục |
+| Số video mỗi folder | 5 | Tạo nhiều video từ cùng 1 folder media |
+| Số luồng song song | 3 | Render nhiều video cùng lúc (nhanh hơn) |
+| Số đoạn mỗi video nguồn | 2–3 | Cắt đoạn ngắn trong 1 file rồi ghép; hết chỗ thì thôi |
+| Độ dài mỗi đoạn | 2.5–4.0s | Đoạn dài hơn; slot hẹp thì lấy trọn slot rồi dừng |
+| Bước nhảy cửa sổ | 5.0s | Lần dùng thứ k cắt trong khung thứ k, hết thì quay vòng |
+| Trùng tối đa | 0.5 | **Chỉ áp cho ẢNH** — video nguồn dùng lại được |
+| CRF | 18 | Nhỏ = nét hơn, file to hơn |
+| Preset | veryfast | veryfast ~1.3s/video 15s |
+
+## Tạo nhiều video từ 1 folder
+
+Muốn đăng hàng loạt mà không bị coi là nội dung trùng lặp, mỗi folder có thể ra
+nhiều video khác nhau:
+
+- **Số video mỗi folder** — số video cần tạo từ folder đó.
+- **Trùng tối đa** — **chỉ áp cho ẢNH**: 2 video bất kỳ không được dùng chung quá
+  mức này (0.5 = 1 nửa) số ảnh. **Video nguồn không bị giới hạn** — dùng lại thoải
+  mái, vì mỗi lần lấy một **đoạn thời gian khác** bên trong file (xem bên dưới).
+- **Số luồng chạy song song** — render nhiều video cùng lúc. Phần chọn media luôn
+  chạy tuần tự trước để giữ ràng buộc không trùng, chỉ phần encode chạy song song.
+- **🔍 Kiểm tra pool** — bấm trước khi chạy: tool đếm media mỗi folder và báo **số
+  video tối đa tạo được**. Nếu ít hơn số anh muốn, tool tự **cảnh báo** và chỉ tạo
+  đến mức tối đa (không tạo video vi phạm ràng buộc).
+
+### Mỗi video có đúng 1 phân cảnh từ video gốc
+
+Mỗi video con lấy **đúng 1 phân cảnh** từ video gốc, phần còn lại là ảnh. Một
+video nguồn dài 20s cắt được **4 đoạn khác nhau** (cửa sổ 5s) → nuôi được 4 video
+con. **Hết chỗ cắt thì các video con sau chuyển hẳn sang TOÀN ẢNH** — không quay
+vòng lại đoạn cũ để tránh trùng khớp. Số cửa sổ tính theo **từng file** (không
+phải tổng), nên một clip ngắn không bị cắt quá số đoạn của chính nó.
+
+### Cắt video nguồn: đoạn 2.5–4s, cửa sổ tăng dần
+
+Mỗi cảnh video **cắt đoạn 2.5–4s** trong file nguồn (muốn 2–3 đoạn ghép lại thì
+đặt số đoạn, nhưng slot cảnh phải đủ chỗ). Slot hẹp hơn mức tối thiểu thì tool
+**lấy trọn slot rồi dừng** — không cắt vụn cho đủ số đoạn, cũng không bù thêm.
+
+**Bước nhảy cửa sổ** (mặc định 5s) quyết định lấy đoạn ở khúc nào của video nguồn:
+
+- Video con thứ 1 dùng file X → cắt trong `0–5s`
+- Video con thứ 2 dùng lại file X → cắt trong `5–10s`
+- Video con thứ 3 → `10–15s` … cứ thế **tăng dần**
+- Hết chiều dài video → **ngừng dùng file đó**, các video con sau chuyển toàn ảnh
+
+Nhờ vậy hai video con không bao giờ cắt đúng khớp cùng một đoạn, dù dùng chung
+file nguồn. Độ dài mỗi đoạn vẫn ngẫu nhiên trong khoảng đã đặt (2.5–4s).
+
+**Đọc được cả ảnh `.jpe` / `.jfif`** (biến thể JPEG của một số máy ảnh và trang
+tin), kể cả khi đuôi viết HOA.
+
+Con số báo là **cận dưới an toàn**: tool mô phỏng thật quá trình chọn media (không
+encode nên rất nhanh) với 3 seed cố định rồi lấy mức cao nhất → lặp lại lần nào
+cũng ra cùng một số, và luôn tạo được đúng bằng đó. Pool rất dư thì báo dạng
+`≥ 200` (chạm trần đếm) thay vì nói một con số cứng.
+
+Con số **tăng rất mạnh so với trước** vì tool đã sửa cách tính trần trùng: trước
+đây trần bị chấm theo *tập đang chọn dở* (nhỏ hơn cỡ cảnh) nên quá chặt — 19 ảnh
+chỉ ra 4–5 video. Nay bốc **cả tập một lượt** rồi mới kiểm trần.
+
+Ví dụ (trùng tối đa 50%, chỉ tính ảnh): 19 ảnh → **~42 video** (trước 4–5) ·
+pool 10 → 3 · pool 20 → 63. Nếu để trùng tối đa 0% (không dùng chung ảnh nào):
+pool 10 → 2 · pool 20 → 4 · pool 50 → 10.
+
+Folder **toàn video** thì không bị trần này chặn — nhưng vẫn giới hạn bởi số cửa
+sổ cắt được: 2 video 20s → 8 video con có phân cảnh video, các video sau đó toàn ảnh.
+
+**Hiệu ứng màu** — 8 kiểu, chọn ngẫu nhiên theo trọng số, 25% cảnh thêm vignette tối 4 góc:
+`am` (ấm), `lanh` (lạnh), `am-nhe`, `tuong-phan`, `phim` (film), `mo`, `sang`, `trong`.
+
+**Random mỗi lần render:** thứ tự file, số lượng file, độ dài từng cảnh, hướng chuyển động, kiểu màu.
+Muốn ra kết quả giống hệt lần trước thì phải tự ghi lại `seed` trong log.
+
+## Tốc độ
+
+~8–10s cho 1 video 15s / 6–7 cảnh (1080x1920, preset veryfast, máy này).
+
+## ffmpeg
+
+Tool tự dò ffmpeg theo thứ tự: `ffmpeg\bin` cạnh tool → `C:\ReverseEngineering\thirdparty\ffmpeg-9.0.2-essentials_build\bin` → `C:\ffmpeg-*\bin` → `PATH`.
+
+Mục **5. ffmpeg** ở tab 1 hiện thư mục đang dùng + phiên bản. Bấm **Chọn** để trỏ tới thư mục chứa `ffmpeg.exe` — hộp chọn **mở sẵn ngay tại thư mục ffmpeg tool đang dùng** (máy đã có sẵn thì vào là thấy). **Mở** để mở Explorer tại thư mục đó. **Tự dò** để quay về mặc định. Gõ/dán đường dẫn trực tiếp cũng được (nhận cả đường dẫn tới `ffmpeg.exe`, có nháy kép cũng được).
+
+Thư mục chọn được lưu vào `config.json` (`ffmpeg_dir`) và nạp lại khi mở tool. Sai đường dẫn thì tool tự bỏ qua và quay về danh sách dò — không lỗi render.
+
+## Cấu trúc
+
+```
+News_Clip_Stitcher\
+├── main.py                 # GUI
+├── run.bat                 # Khởi động
+├── config.json             # Tự lưu thông số + danh sách folder
+├── models\
+│   └── face_detection_yunet_2023mar.onnx   # Model tìm mặt (230KB, tự tải lần đầu)
+├── core\
+│   ├── ffmpeg_util.py      # Tìm ffmpeg, probe media
+│   ├── facedetect.py       # Tìm mặt chủ thể để canh crop
+│   ├── banner.py           # Dựng overlay BREAKING NEWS + CTA
+│   └── stitcher.py         # Engine render
+└── output\                 # Video xuất ra
+```
+
+## Chưa làm (theo yêu cầu)
+
+- Phần MC đang nói (avatar/người dẫn)
+
+→ Sẽ làm ở bước sau, khi anh đã ổn phần nối ảnh/video + banner.
+
+## Yêu cầu
+
+- Python 3.13 + Pillow
+- ffmpeg (tự tìm ở `C:\ReverseEngineering\thirdparty\ffmpeg-9.0.2-essentials_build\bin`)
