@@ -18,10 +18,12 @@ Trước khi ghi đè, tự sao lưu toàn bộ file sắp thay vào _backup_upd
 from __future__ import annotations
 
 import io
+import base64
 import json
 import os
 import re
 import shutil
+import ssl
 import sys
 import time
 import urllib.error
@@ -54,6 +56,91 @@ KEEP_SUFFIX = {".log", ".bak", ".part"}
 
 TIMEOUT = 25
 
+# File chứng chỉ CA đóng gói kèm tool. Máy Windows cũ / Python không có
+# certifi sẽ báo "CERTIFICATE_VERIFY_FAILED: unable to get local issuer
+# certificate" khi gọi HTTPS. Dùng bundle này thì không phụ thuộc máy.
+CA_FILE = BASE / "cacert.pem"
+
+
+def _ssl_context() -> ssl.SSLContext:
+    """SSL context bám chắc, thử lần lượt 4 nguồn chứng chỉ.
+
+    1. cacert.pem đóng gói kèm tool  (chắc nhất, không phụ thuộc máy)
+    2. certifi (nếu máy có cài)
+    3. kho chứng chỉ của Windows     (máy cũ thiếu certifi vẫn thường có)
+    4. mặc định của hệ thống
+    """
+    for cafile in (CA_FILE,
+                   _certifi_path(),
+                   ssl.get_default_verify_paths().cafile):
+        if cafile and Path(cafile).is_file():
+            try:
+                return ssl.create_default_context(cafile=str(cafile))
+            except Exception:
+                continue
+    # 3) nạp thẳng từ kho chứng chỉ Windows
+    ctx = _windows_store_context()
+    if ctx is not None:
+        return ctx
+    return ssl.create_default_context()
+
+
+def _windows_store_context():
+    """Gom chứng chỉ từ kho ROOT/CA của Windows thành 1 context. None nếu không có."""
+    try:
+        pems = []
+        for store in ("ROOT", "CA"):
+            try:
+                for cert, enc, trust in ssl.enum_certificates(store):
+                    if enc == "x509_asn":
+                        pems.append(
+                            "-----BEGIN CERTIFICATE-----\n"
+                            + base64.encodebytes(cert).decode("ascii").strip()
+                            + "\n-----END CERTIFICATE-----\n")
+            except Exception:
+                continue
+        if not pems:
+            return None
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = True
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.load_verify_locations(cadata="".join(pems))
+        return ctx
+    except Exception:
+        return None
+
+
+def _certifi_path():
+    try:
+        import certifi
+        return certifi.where()
+    except Exception:
+        return None
+
+
+def _urlopen(req, timeout: int = TIMEOUT):
+    """urlopen có tự chữa lỗi chứng chỉ.
+
+    Thử context bám chắc trước; nếu vẫn CERTIFICATE_VERIFY_FAILED thì thử
+    context mặc định của hệ thống (một số máy chỉ có kho chứng chỉ Windows).
+    """
+    ctxs = [_ssl_context()]
+    try:
+        ctxs.append(ssl.create_default_context())
+    except Exception:
+        pass
+    last = None
+    for ctx in ctxs:
+        try:
+            return urllib.request.urlopen(req, timeout=timeout, context=ctx)
+        except urllib.error.URLError as e:
+            if isinstance(getattr(e, "reason", None), ssl.SSLError) or \
+                    "CERTIFICATE_VERIFY_FAILED" in str(e):
+                last = e
+                continue
+            raise
+    raise last
+
 
 # ---------------------------------------------------------------- tiện ích
 
@@ -83,7 +170,7 @@ def _get(url: str, timeout: int = TIMEOUT) -> bytes:
     req = urllib.request.Request(
         url, headers={"User-Agent": "NewsClipStitcher-Updater",
                       "Accept": "application/vnd.github+json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
+    with _urlopen(req, timeout=timeout) as r:
         return r.read()
 
 

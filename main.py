@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.22.0"
+APP_VERSION = "1.23.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -2239,7 +2239,13 @@ class App:
     def _update_fail(self, err):
         self.upd_btn.config(state="normal", text="⬆ Cập nhật")
         self.blog(f"LỖI cập nhật: {err}")
-        messagebox.showerror("Cập nhật", f"Không cập nhật được:\n{err}")
+        msg = f"Không cập nhật được:\n{err}"
+        low = str(err).lower()
+        if "certificate" in low or "ssl" in low:
+            msg += ("\n\nMáy này thiếu kho chứng chỉ CA.\n"
+                    "Cách sửa: bấm đúp file 'Sua_loi_cap_nhat.bat' "
+                    "nằm cùng thư mục tool rồi chạy lại.")
+        messagebox.showerror("Cập nhật", msg)
 
 
 

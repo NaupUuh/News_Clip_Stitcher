@@ -1,5 +1,5 @@
 {
-  "version": "1.22.0",
-  "notes": "Sua so video bao truoc cho khop that (ghim seed+co canh khi render, truoc bao 51 chi ra 28); hien thi 'clip goc Xs -> du video cho ~N video' thay vi gay hieu lam '68 doan'",
+  "version": "1.23.0",
+  "notes": "Sua loi 'Khong cap nhat duoc' (CERTIFICATE_VERIFY_FAILED) tren may thieu chung chi: updater tu dung kho CA cua Windows + kem cacert.pem; them Sua_loi_cap_nhat.bat de tu chua may dang ket",
   "date": "2026-10-04"
 }
