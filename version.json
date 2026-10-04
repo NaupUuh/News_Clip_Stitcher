@@ -1,5 +1,5 @@
 {
-  "version": "1.20.0",
-  "notes": "Clip goc bi cat lia thanh nhieu doan 2.5-4s dung het; 1 video con = nhieu doan video + vai anh (60-85% canh la video); het doan video thi dung toan anh",
+  "version": "1.21.0",
+  "notes": "Bo doan DEN dau/cuoi clip khi cat (video khong mo man bang khung den); sua con tro cat lech moc; 1 video con = nhieu doan video + vai anh",
   "date": "2026-10-04"
 }

@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.20.0"
+APP_VERSION = "1.21.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)

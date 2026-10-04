@@ -53,16 +53,43 @@ class CutPool:
     durations: {ten file: do dai giay} cua cac video nguon.
     """
 
-    def __init__(self, durations=None):
+    def __init__(self, durations=None, skips=None, keep_min=0.0):
         self.dur = {}
+        self.off = {}      # moc BAT DAU that su (bo doan den dau clip)
         for k, v in (durations or {}).items():
             try:
                 fv = float(v)
             except (TypeError, ValueError):
                 fv = 0.0
             if fv > 0.05:
-                self.dur[str(k)] = fv
-        self.pos = {k: 0.0 for k in self.dur}
+                key = str(k)
+                head, tail = 0.0, 0.0
+                try:
+                    h, t = (skips or {}).get(key, (0.0, 0.0))
+                    head, tail = max(0.0, float(h or 0.0)), max(0.0, float(t or 0.0))
+                except (TypeError, ValueError):
+                    head, tail = 0.0, 0.0
+                # khong bao gio bo qua qua nua file (tranh doan nhan dam)
+                if head + tail > fv * 0.5:
+                    head, tail = 0.0, 0.0
+                # CHOT QUAN TRONG: neu bo den lam clip mat kha nang dung (con lai
+                # < keep_min, tuc < do dai doan toi thieu) thi giam bot phan bo —
+                # dung clip (du co vai frame den) van hon la mat han 1 doan video.
+                try:
+                    kmin = float(keep_min or 0.0)
+                except (TypeError, ValueError):
+                    kmin = 0.0
+                if kmin > 0 and (fv - head - tail) < kmin and head + tail > 0:
+                    excess = kmin - (fv - head - tail)
+                    if excess >= head + tail:
+                        head, tail = 0.0, 0.0
+                    elif head >= tail:
+                        head = max(0.0, head - excess)
+                    else:
+                        tail = max(0.0, tail - excess)
+                self.off[key] = head
+                self.dur[key] = max(0.05, fv - head - tail)
+        self.pos = {k: 0.0 for k in self.dur}   # con tro TUONG DOI (0 = moc off)
         self.used = {k: 0 for k in self.dur}
 
     # ── truy van ────────────────────────────────────────────
@@ -123,7 +150,7 @@ class CutPool:
         fr = max(1, int(round(need * fps)))
         self.pos[key] = pos + fr / fps
         self.used[key] = self.used.get(key, 0) + 1
-        return (pos, fr)
+        return (self.off.get(key, 0.0) + pos, fr)   # moc TUYET DOI trong file
 
     def take_tail(self, key, min_sec, fps=30.0):
         """Lay NOT phan cuoi con lai cua `key` (neu >= min_sec). Dung het video.
@@ -142,7 +169,7 @@ class CutPool:
         fr = max(1, int(round(avail * fps)))
         self.pos[key] = d
         self.used[key] = self.used.get(key, 0) + 1
-        return (pos, fr)
+        return (self.off.get(key, 0.0) + pos, fr)   # moc TUYET DOI trong file
 
     def take_any(self, need_sec, fps=30.0, rng=None, prefer=None):
         """Cat 1 doan tu BAT KY file nao con du dai.
@@ -179,17 +206,19 @@ class CutPool:
 
     # ── luu / phuc hoi trang thai ───────────────────────────
     def snapshot(self):
-        return {"dur": dict(self.dur), "pos": dict(self.pos),
-                "used": dict(self.used)}
+        return {"dur": dict(self.dur), "off": dict(self.off),
+                "pos": dict(self.pos), "used": dict(self.used)}
 
     @classmethod
     def restore(cls, snap):
         o = cls()
         snap = snap or {}
         o.dur = {str(k): float(v) for k, v in (snap.get("dur") or {}).items()}
+        o.off = {str(k): float(v) for k, v in (snap.get("off") or {}).items()}
         o.pos = {str(k): float(v) for k, v in (snap.get("pos") or {}).items()}
         o.used = {str(k): int(v) for k, v in (snap.get("used") or {}).items()}
         for k in o.dur:
+            o.off.setdefault(k, 0.0)
             o.pos.setdefault(k, 0.0)
             o.used.setdefault(k, 0)
         return o

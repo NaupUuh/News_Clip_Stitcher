@@ -763,6 +763,55 @@ def _split_window(rng, lo, hi, need, cfg, fps):
     return [(s, f) for (s, _d), f in zip(picks, fr)]
 
 
+def _black_edges(ffmpeg, path, dur, thr=18.0, probe_max=40):
+    """Dò đoạn ĐEN ở đầu/cuối clip -> (giây_bỏ_đầu, giây_bỏ_đuôi).
+
+    Lấy mẫu thưa (tối đa `probe_max` điểm) rồi đo độ sáng trung bình từng mẫu.
+    Trả (0,0) nếu không rõ hoặc lỗi -> giữ nguyên hành vi cũ.
+    """
+    try:
+        d = float(dur)
+    except (TypeError, ValueError):
+        return (0.0, 0.0)
+    if d < 1.0 or not ffmpeg:
+        return (0.0, 0.0)
+    step = max(0.05, d / float(probe_max))
+    vals = []
+    try:
+        import subprocess as _sp
+        import numpy as _np
+        cmd = [ffmpeg, "-v", "error", "-i", str(path),
+               "-vf", "fps=%f,scale=32:32" % (1.0 / step),
+               "-pix_fmt", "gray", "-f", "rawvideo", "-"]
+        pr = _sp.run(cmd, stdout=_sp.PIPE, stderr=_sp.DEVNULL, timeout=60)
+        buf = _np.frombuffer(pr.stdout, dtype=_np.uint8)
+        n = buf.size // 1024
+        if n <= 0:
+            return (0.0, 0.0)
+        vals = [float(buf[i * 1024:(i + 1) * 1024].mean()) for i in range(n)]
+    except Exception:
+        return (0.0, 0.0)
+    if len(vals) < 3:
+        return (0.0, 0.0)
+    bright = max(vals)
+    if bright < thr:                      # clip toi hoan toan -> khong bo gi
+        return (0.0, 0.0)
+    lim = max(thr, bright * 0.12)         # nguong "con la den"
+    i, j = 0, len(vals) - 1
+    while i < len(vals) and vals[i] <= lim:
+        i += 1
+    while j > i and vals[j] <= lim:
+        j -= 1
+    head = i * step
+    tail = (len(vals) - 1 - j) * step
+    # bo qua thi phai la doan DEN THAT SU (>= 0.3s), tranh cat vun o nhieu
+    if head < 0.3:
+        head = 0.0
+    if tail < 0.3:
+        tail = 0.0
+    return (round(head, 3), round(tail, 3))
+
+
 class Stitcher:
     def __init__(self, cfg, log=None, progress=None):
         self.cfg = cfg
@@ -802,7 +851,7 @@ class Stitcher:
         # (đúng yêu cầu người dùng). Dùng bản CLONE cho mỗi lần thử để nhánh
         # thử thất bại không ăn mất đoạn video.
         _imgs, _vids = list_media(folder, cfg.get("recursive", False))
-        cut_pool = CutPool(self._video_durations(_vids))
+        cut_pool = self._cut_pool(_vids)
         for _ in range(max(0, int(n_videos))):
             plan = None
             for _a in range(max(1, int(attempts))):
@@ -989,7 +1038,7 @@ class Stitcher:
             hi_frames = max(lo_frames, hi_frames)
 
         if cut_pool is None:
-            cut_pool = CutPool(self._video_durations(vids))
+            cut_pool = self._cut_pool(vids)
 
         slot_sec = lo_frames / float(fps)
         n_slots = cut_pool.video_slots_left(slot_sec) if vids else 0
@@ -1159,6 +1208,34 @@ class Stitcher:
 
 
     # ── internal ───────────────────────────────────────────
+    def _video_skips(self, vids, dur):
+        """Dò đoạn ĐEN đầu/cuối clip -> {tên file: (bỏ_đầu, bỏ_đuôi)}.
+
+        Clip tin tức hay có 1-2s đen đầu (đài phát chưa vào hình) — nếu cắt trúng
+        đoạn đó thì video con sẽ mở màn bằng khung đen. Bỏ phần đen để tránh.
+        Dò thưa (tối đa 40 mẫu/file) để không làm chậm.
+        """
+        out = {}
+        for p in vids:
+            key = p.name
+            d = float(dur.get(key, 0.0) or 0.0)
+            if d < 1.0:
+                continue
+            try:
+                out[key] = _black_edges(self.cfg.get("ffmpeg"), p, d)
+            except Exception:
+                continue
+        return out
+
+    def _cut_pool(self, vids):
+        """Tạo CutPool cho danh sách video, tự dò bỏ đoạn đen đầu/cuối."""
+        dur = self._video_durations(vids)
+        try:
+            kmin = float(self.cfg.get("seg_dur_min", 2.5) or 2.5)
+        except (TypeError, ValueError):
+            kmin = 2.5
+        return CutPool(dur, self._video_skips(vids, dur), keep_min=kmin)
+
     def _video_durations(self, vids):
         """Độ dài (giây) của từng video nguồn -> {tên file: giây}."""
         out = {}
@@ -1169,6 +1246,75 @@ class Stitcher:
                 d = 0.0
             if d > 0.05:
                 out[p.name] = d
+        return out
+
+    def _video_skips(self, vids, durations=None):
+        """Dò đoạn ĐEN ở đầu/cuối mỗi clip -> {tên file: (bỏ_đầu, bỏ_cuối)}.
+
+        Clip nguồn hay có 1-2s đen mở màn (logo/khe chuyển); nếu cắt trúng thì
+        video con bắt đầu bằng khung đen. Dò bằng cách lấy mẫu vài frame đầu và
+        cuối, frame nào tối (sáng TB < 8) thì coi là đen. Bỏ qua tối đa 30% mỗi
+        phía để không ăn mất nội dung thật.
+        """
+        durations = durations or {}
+        out = {}
+        try:
+            import numpy as np
+            import cv2
+        except Exception:
+            return out
+        for p in vids:
+            dur = float(durations.get(p.name) or 0.0)
+            if dur <= 0.5:
+                continue
+            cap = None
+            try:
+                cap = cv2.VideoCapture(str(p))
+                if not cap.isOpened():
+                    continue
+                fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0) or 30.0
+                nf = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+                if nf <= 1:
+                    nf = max(1, int(dur * fps))
+                cap_lim = max(0.5, dur * 0.30)          # trần bỏ mỗi phía
+                step = max(1, int(fps * 0.1))           # lấy mẫu 10 frame/giây
+
+                def _dark(idx):
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, int(idx))
+                    ok, fr = cap.read()
+                    if not ok or fr is None:
+                        return False
+                    try:
+                        return float(fr.mean()) < 8.0
+                    except Exception:
+                        return False
+
+                # đầu clip
+                head = 0.0
+                k = 0
+                while k / fps < cap_lim:
+                    if not _dark(k):
+                        break
+                    head = (k + 1) / fps
+                    k += step
+                # đuôi clip
+                tail = 0.0
+                k = nf - 1
+                while (nf - 1 - k) / fps < cap_lim and k > 0:
+                    if not _dark(k):
+                        break
+                    tail = (nf - k) / fps
+                    k -= step
+                if head > 0.05 or tail > 0.05:
+                    out[p.name] = (round(head, 3), round(tail, 3))
+            except Exception:
+                continue
+            finally:
+                try:
+                    if cap is not None:
+                        cap.release()
+                except Exception:
+                    pass
         return out
 
     def _fit_to_media(self, slots, items, durations, fps, lo_frames):
