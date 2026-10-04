@@ -305,9 +305,10 @@ nhiều video khác nhau:
 
 Clip gốc bị **cắt lìa liên tiếp** thành nhiều đoạn dài 2.5–4s, phủ hết chiều dài
 file (clip 1 phút → ~18 đoạn). **Mỗi đoạn chỉ dùng 1 lần** — không có đoạn nào
-xuất hiện ở 2 video con. Một video con lấy **nhiều đoạn video + vài ảnh**
-(mặc định 60–85% số cảnh là video), nên video ra có chuyển động liên tục thay vì
-1 đoạn video rồi toàn ảnh.
+lặp lại. Đoạn ĐEN đầu/cuối clip (đài chưa vào hình) **tự động bị bỏ** nên video
+con không bao giờ mở màn bằng khung đen. Một video con lấy **nhiều đoạn video +
+vài ảnh** (mặc định 60–85% số cảnh là video), nên video ra có chuyển động liên
+tục thay vì 1 đoạn video rồi toàn ảnh.
 
 **Hết đoạn video thì các video con sau chuyển hẳn sang TOÀN ẢNH** — không quay
 vòng lại đoạn cũ. Ví dụ: 10 ảnh + 1 clip 97s → 39 đoạn → 11 video con dùng hết
