@@ -33,6 +33,20 @@ tool tải bản mới, **giữ nguyên cài đặt + key + video cũ**, rồi *
 - `config.json` (key Vilao, đường dẫn, cài đặt) **không bao giờ** bị ghi đè.
 - Chạy tay: `python updater.py` (chỉ kiểm tra) hoặc `python updater.py --apply`.
 
+**Lỗi "Không cập nhật được: CERTIFICATE_VERIFY_FAILED":**
+
+Máy đó thiếu kho chứng chỉ CA nên Python không gọi được HTTPS tới GitHub. Sửa:
+
+1. Copy file **`Sua_loi_cap_nhat.bat`** (+ `Sua_loi_cap_nhat.ps1`) sang máy đó,
+   để cạnh `main.py`.
+2. Double-click `Sua_loi_cap_nhat.bat` → nó tự sửa rồi cập nhật lên bản mới nhất.
+   Giữ nguyên `config.json`.
+3. Nếu máy đó không có Internet: copy cả thư mục tool từ ổ `Z:` về, đè lên
+   (nhớ giữ `config.json` cũ).
+
+Từ v1.23.0, `updater.py` tự dùng kho chứng chỉ Windows khi máy thiếu CA, nên
+các máy đã lên 1.23.0 sẽ không gặp lại lỗi này.
+
 **Phát hành bản mới (chỉ trên máy anh):**
 
 ```bash

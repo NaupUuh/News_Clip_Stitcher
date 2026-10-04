@@ -1,5 +1,5 @@
 {
-  "version": "1.23.0",
-  "notes": "Sua loi 'Khong cap nhat duoc' (CERTIFICATE_VERIFY_FAILED) tren may thieu chung chi: updater tu dung kho CA cua Windows + kem cacert.pem; them Sua_loi_cap_nhat.bat de tu chua may dang ket",
+  "version": "1.23.1",
+  "notes": "README: huong dan sua loi CERTIFICATE_VERIFY_FAILED (may thieu chung chi CA) bang Sua_loi_cap_nhat.bat",
   "date": "2026-10-04"
 }
