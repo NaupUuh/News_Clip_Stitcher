@@ -1,5 +1,5 @@
 {
-  "version": "1.21.0",
-  "notes": "Bo doan DEN dau/cuoi clip khi cat (video khong mo man bang khung den); sua con tro cat lech moc; 1 video con = nhieu doan video + vai anh",
+  "version": "1.22.0",
+  "notes": "Sua so video bao truoc cho khop that (ghim seed+co canh khi render, truoc bao 51 chi ra 28); hien thi 'clip goc Xs -> du video cho ~N video' thay vi gay hieu lam '68 doan'",
   "date": "2026-10-04"
 }

@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.21.0"
+APP_VERSION = "1.22.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -1920,10 +1920,17 @@ class App:
                          else str(rep["max_videos"]))
                 line = (f"• [{i}] {name}: {rep['imgs']} ảnh + {rep['vids']} video"
                         f" = {rep['pool']} file → tối đa {n_txt} video")
-                vclip = rep.get("vid_cuts", rep.get("vid_windows", 0))
-                if vclip:
-                    line += (f"; clip gốc cắt được {vclip} đoạn "
-                             f"(mỗi đoạn dùng 1 lần, hết đoạn thì toàn ảnh)")
+                # Quy đổi số đoạn cắt thành SỐ VIDEO thật — nói "68 đoạn" gây
+                # hiểu lầm là tạo được 68 video, trong khi 1 video con ăn 4-6
+                # đoạn nên chỉ ra được ~1/5 số đó.
+                vsec = float(rep.get("vid_secs") or 0.0)
+                if vsec > 0:
+                    total_s = float(self.vars["total"].get() or 15.0)
+                    # mỗi video con lấy 60-85% thời lượng là cảnh video
+                    v_lo = int(vsec / (total_s * 0.85))
+                    v_hi = int(vsec / (total_s * 0.60))
+                    line += (f"; clip gốc {vsec:.0f}s → đủ video cho "
+                             f"~{v_lo}-{v_hi} video")
                 if rep.get("capped"):
                     line += "  (rất nhiều — chạm trần đếm)"
                 if rep["max_videos"] < n_want and not rep.get("capped"):
@@ -2079,14 +2086,16 @@ class App:
                 plans = planner.plan_sequence(folder, want,
                                               max_overlap=max_ovl,
                                               fixed_n=pin_n,
-                                              fallback_n=rep["n_min"])
+                                              fallback_n=rep["n_min"],
+                                              seed=rep.get("best_seed"))
                 if len(plans) < want:
-                    # cỡ cảnh ngẫu nhiên kém hiệu quả -> ghim cỡ tối ưu để
-                    # đạt đúng số video đã báo trước
+                    # cỡ cảnh ngẫu nhiên kém hiệu quả -> ghim cỡ tối ưu + seed
+                    # mà báo cáo đã tìm ra để đạt đúng số video đã báo trước
                     plans = planner.plan_sequence(folder, want,
                                                   max_overlap=max_ovl,
                                                   fixed_n=rep["best_n"],
-                                                  fallback_n=rep["n_min"])
+                                                  fallback_n=rep["n_min"],
+                                                  seed=rep.get("best_seed"))
                 if not plans:
                     self.log("❌ Không lập được kế hoạch nào.")
                     fail += 1

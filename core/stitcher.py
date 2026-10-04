@@ -42,6 +42,12 @@ class StitchError(Exception):
 # suất trúng rất cao; 60 lần là quá đủ kể cả khi pool gần cạn.
 _TRIES = 60
 
+# Seed cố định cho báo cáo "KIỂM TRA POOL": con số báo trước phải ỔN ĐỊNH và
+# phải ĐẠT ĐƯỢC THẬT khi render. GUI ghim đúng best_seed + best_n mà báo cáo
+# tìm ra, nên số hiển thị luôn khớp số render (trước đây báo max qua nhiều seed
+# nhưng render lại dùng seed ngẫu nhiên -> hứa 51 mà chỉ ra 28).
+REPORT_SEEDS = (20260101, 424242)
+
 
 def list_media(folder, recursive=False):
     """Quét folder, trả về (danh sách ảnh, danh sách video) đã sort."""
@@ -825,7 +831,7 @@ class Stitcher:
 
     def plan_sequence(self, folder, n_videos, max_overlap=0.5, fixed_n=None,
                       attempts=6, fallback_n=None, stop_on_fail=True,
-                      prev_sets=None):
+                      prev_sets=None, seed=None):
         """Lập kế hoạch cho CẢ CHUỖI video trong 1 folder (tuần tự).
 
         Đây là nguồn sự thật duy nhất: cả báo "số video tối đa" lẫn render đều
@@ -836,10 +842,19 @@ class Stitcher:
         kẹt và có `fallback_n`, thử lại với cỡ cảnh đó (cỡ nhỏ luôn hiệu quả
         hơn) — nhờ vậy đạt được đúng con số đã báo trước.
 
+        seed: ghim seed cố định (GUI truyền best_seed từ pool_report) để số
+        video lập được ĐÚNG BẰNG con số đã báo trước. None = ngẫu nhiên.
+
         prev_sets: nếu truyền vào list, hàm ghi thêm vào đó (để gọi nối tiếp).
         Trả về danh sách plan.
         """
         cfg = self.cfg
+        if seed is not None:
+            # Ghim seed cho MỌI lần lập kế hoạch trong lượt này — không dùng
+            # seed ngẫu nhiên của từng video con, nếu không con số sẽ lệch.
+            cfg = dict(cfg)
+            cfg["seed"] = seed
+            self.cfg = cfg
         if prev_sets is None:
             prev_sets = []
         plans = []
@@ -911,16 +926,17 @@ class Stitcher:
         hi = max(lo, int(cfg.get("n_max", 7)))
         if pool == 0:
             return {"imgs": 0, "vids": 0, "pool": 0, "max_videos": 0,
-                    "best_n": lo, "n_min": lo, "n_max": hi,
+                    "best_n": lo, "best_seed": 0,
+                    "vid_videos": 0, "vid_videos_max": 0,
+                    "n_min": lo, "n_max": hi,
                     "max_overlap": float(max_overlap), "capped": False}
 
-        best, best_n = 0, lo
+        best, best_n, best_seed = 0, lo, REPORT_SEEDS[0]
 
-        def scan(seed=None):
+        def scan(seed):
             """Trả về (số video lập được, cỡ cảnh) cho từng cỡ cảnh."""
             c = dict(cfg)
-            if seed is not None:
-                c["seed"] = seed
+            c["seed"] = seed
             q = Stitcher(c, log=lambda m: None)
             out = []
             seen = set()
@@ -948,7 +964,7 @@ class Stitcher:
                     break
             return out
 
-        for made, n in scan():
+        for made, n in scan(REPORT_SEEDS[0]):
             if made > best:
                 best, best_n = made, n
 
@@ -957,18 +973,19 @@ class Stitcher:
             # Con số hiển thị phải ỔN ĐỊNH giữa các lần bấm. Vì cách chọn có
             # yếu tố ngẫu nhiên, thử thêm vài seed cố định và lấy kết quả CAO
             # NHẤT — đó là mức chắc chắn đạt được, và lặp lại lần nào cũng ra
-            # cùng một số.
-            for s in (20260101, 424242):
+            # cùng một số. Ghi lại seed đã đạt con số đó (best_seed) để GUI
+            # GHIM đúng seed khi render, nhờ vậy số báo trước = số render thật.
+            for s in REPORT_SEEDS[1:]:
                 for made, n in scan(s):
                     if made > best:
-                        best, best_n = made, n
+                        best, best_n, best_seed = made, n, s
                     if best >= sim_limit:
                         break
                 if best >= sim_limit:
                     break
 
         return {"imgs": len(imgs), "vids": len(vids), "pool": pool,
-                "max_videos": best, "best_n": best_n,
+                "max_videos": best, "best_n": best_n, "best_seed": best_seed,
                 "n_min": lo, "n_max": hi,
                 "max_overlap": float(max_overlap),
                 # số ĐOẠN CẮT còn dùng được từ video gốc (mỗi đoạn dùng 1 lần;
@@ -981,6 +998,11 @@ class Stitcher:
                     vids, self.ffprobe,
                     cfg.get("seg_dur_min", 2.5),
                     cfg.get("seg_dur_max", 4.0)).values()),
+                # Tổng GIÂY video nguồn còn dùng được. Quy đổi thẳng thành số
+                # video con mà phần video đủ sức phục vụ (mỗi video con lấy
+                # 60-85% thời lượng là cảnh video) — để người dùng biết video
+                # là nút thắt hay ảnh mới là nút thắt.
+                "vid_secs": round(self._cut_pool(vids).total_sec(), 2),
                 "capped": best >= sim_limit}
 
 
