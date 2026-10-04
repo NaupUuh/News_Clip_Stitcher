@@ -11,8 +11,8 @@ output/
 *.m4a
 *.wav
 
-# model AI tải về (tự tải lại khi chạy)
-models/*.onnx
+# model AI tải về (232KB, đẩy kèm repo để máy khác có sẵn -> canh mặt chạy ngay)
+models/*.part
 
 # sao lưu khi cập nhật
 _backup_update/
