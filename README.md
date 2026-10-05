@@ -392,11 +392,10 @@ News_Clip_Stitcher\
 └── output\                 # Video xuất ra
 ```
 
-## Chưa làm (theo yêu cầu)
+## Tiếp tục tool này sau
 
-- Phần MC đang nói (avatar/người dẫn)
-
-→ Sẽ làm ở bước sau, khi anh đã ổn phần nối ảnh/video + banner.
+**Đọc `TIEP_TUC.md`** trong thư mục tool — có trạng thái hiện tại, việc còn lại,
+đường dẫn, lệnh phát hành và các luật không được quên.
 
 ## Yêu cầu
 
