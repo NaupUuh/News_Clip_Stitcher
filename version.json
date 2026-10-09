@@ -1,5 +1,5 @@
 {
-  "version": "1.24.1",
-  "notes": "Sua loi ep thoi luong audio: lan ep thu 2 tro di doc cache cu nen bao that bai (ep 15s->30s). Them toc do doc do that 15.6 ky tu/giay (do 4 giong ElevenLabs) de goi y so ky tu chinh xac",
-  "date": "2026-10-04"
+  "version": "1.24.2",
+  "notes": "Tab 2 muc 7: tu tai anh stock theo tin, KHONG can API key (Wikimedia Commons)",
+  "date": "2026-10-09"
 }

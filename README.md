@@ -1,4 +1,4 @@
-# News Clip Stitcher v1.19.0
+# News Clip Stitcher v1.24.2
 
 Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chuyển động**, kiểu news reel.
 
@@ -200,6 +200,30 @@ tiêu đề gốc từ RSS.
   giữa các request và **đổi model** khi bị 429/503.
 - Model khả dụng đo được: `gemini-3.5-flash-lite`, `gemini-3.5-flash`,
   `gemini-flash-latest`, `gemini-2.0-flash-lite`… (Gemini 2.5 đã bị khai tử với key này).
+
+### Mục 7 — Tìm ảnh theo tin (KHÔNG cần API key)
+
+Tự tải ảnh stock theo từ khoá tin, dùng cho phần ẢNH trong reel. Không cần
+đăng ký, không cần key.
+
+- Bấm **⬅ Lấy từ tin đang chọn** để lấy từ khoá từ tin đang chọn trong bảng
+  "Tin nóng 24h" — dùng luôn `keyword` mà AI đã sinh sẵn, **không tốn thêm phí**.
+  Hoặc gõ tay, nhiều từ khoá cách nhau bằng dấu phẩy.
+- Nguồn: **Wikimedia Commons** (ảnh chính phủ Mỹ = Public Domain, hợp tin
+  chính trị nhất).
+- Chỉ nhận ảnh dùng thương mại được: **CC0 / Public Domain / CC-BY**. Tự bỏ
+  CC BY-SA (share-alike sẽ buộc cả video theo CC-BY-SA), ND và NC.
+- **Chỉ nhận ảnh đủ nét sau khi cắt dọc 9:16.** Video là khung 9:16 và ảnh bị
+  cover-crop (cắt 2 bên), nên ảnh 1920x1080 chỉ còn 607px bề ngang rồi bị
+  phóng to 1.8x = mờ. Tool lọc theo bề ngang **sau khi cắt**, không theo bề
+  ngang ảnh gốc.
+- Openverse có sẵn trong tool nhưng **mặc định TẮT**: chủ yếu là ảnh Flickr cũ
+  500-1024px, sau crop dọc chỉ còn dưới 600px → luôn mờ. Chọn trong ô "Nguồn"
+  nếu vẫn muốn dùng.
+- Mỗi ảnh tải về đều ghi `credits.txt` cạnh ảnh:
+  `tên_file | license | tác giả | nguồn | trang gốc`. CC-BY cần ghi tên tác
+  giả — dán dòng tương ứng vào phần mô tả video nếu cần.
+- Tự thêm folder ảnh vào danh sách nguồn video ở tab 1 (bỏ tick nếu không muốn).
 
 ## Cách dùng
 
