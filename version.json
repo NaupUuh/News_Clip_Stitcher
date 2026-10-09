@@ -1,5 +1,5 @@
 {
-  "version": "1.25.0",
-  "notes": "Anh dung tin: lay anh chinh bai bao tu RSS truc tiep 51 bao (88-100% tin co anh), che do hien thi auto luon net",
+  "version": "1.25.1",
+  "notes": "Bo muc 7 Tim anh theo tin theo yeu cau anh: go core/images.py, nut tai anh, RSS bao truc tiep, che do fit",
   "date": "2026-10-09"
 }

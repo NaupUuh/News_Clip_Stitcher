@@ -1,4 +1,4 @@
-# News Clip Stitcher v1.25.0
+# News Clip Stitcher v1.25.1
 
 Nối **ảnh + video** thành video tin tức dọc 9:16 có **hiệu ứng chuyển động**, kiểu news reel.
 
@@ -200,51 +200,6 @@ tiêu đề gốc từ RSS.
   giữa các request và **đổi model** khi bị 429/503.
 - Model khả dụng đo được: `gemini-3.5-flash-lite`, `gemini-3.5-flash`,
   `gemini-flash-latest`, `gemini-2.0-flash-lite`… (Gemini 2.5 đã bị khai tử với key này).
-
-### Mục 7 — Ảnh ĐÚNG TIN + ảnh stock (KHÔNG cần API key)
-
-Lấy ảnh cho phần ẢNH trong reel. Không cần đăng ký, không cần key.
-
-**Ô "Kiểu lấy ảnh" có 3 chế độ:**
-
-- **`news` (mặc định) — Ảnh ĐÚNG BÀI BÁO.** Lấy ảnh của **chính bài báo** đang
-  hiện trong bảng "Tin nóng 24h": ảnh có sẵn trong RSS của báo, thiếu thì lấy
-  `og:image` của bài. Ảnh đúng nhân vật/đúng sự kiện, không phải ảnh stock
-  chung chung. Nút **📰 Ảnh đúng tin (cả loạt)** tải cho toàn bộ tin đang có.
-- **`keyword` — ảnh stock** theo từ khoá (Wikimedia Commons).
-- **`both` — cả hai**, gộp chung vào folder ảnh.
-
-**Nguồn tin cho ảnh `news`:** tool lấy **RSS trực tiếp của ~51 báo** (đo thật:
-39-41 feed sống, ~99 tin/24h, **~88-100% tin có ảnh sẵn**). Ảnh báo thường là
-bản lớn (NPR 6000x4000, Politico 4000x2666, Guardian 1200x630).
-
-**Ô "Hiển thị ảnh":**
-
-- **`auto` (mặc định)** — tự chọn cho từng ảnh: ảnh đủ to thì **tràn viền**,
-  ảnh ngang nhỏ thì **nền mờ** (ảnh hiện ở 1080x567 = thu nhỏ 0.9x nên vẫn nét).
-  Đây là chế độ luôn nét nhất.
-- `cover` — luôn tràn viền (ảnh 1200x630 sẽ chỉ còn 354px rồi phóng 3x = mờ).
-- `blur` — luôn nền mờ.
-
-- Bấm **⬅ Lấy từ tin đang chọn** để lấy từ khoá từ tin đang chọn trong bảng
-  "Tin nóng 24h" — dùng luôn `keyword` mà AI đã sinh sẵn, **không tốn thêm phí**.
-  Hoặc gõ tay, nhiều từ khoá cách nhau bằng dấu phẩy.
-- Nguồn stock: **Wikimedia Commons** (ảnh chính phủ Mỹ = Public Domain, hợp
-  tin chính trị nhất).
-- Chỉ nhận ảnh dùng thương mại được: **CC0 / Public Domain / CC-BY**. Tự bỏ
-  CC BY-SA (share-alike sẽ buộc cả video theo CC-BY-SA), ND và NC.
-- **Chỉ nhận ảnh đủ nét sau khi cắt dọc 9:16.** Video là khung 9:16 và ảnh bị
-  cover-crop (cắt 2 bên), nên ảnh 1920x1080 chỉ còn 607px bề ngang rồi bị
-  phóng to 1.8x = mờ. Tool lọc theo bề ngang **sau khi cắt**, không theo bề
-  ngang ảnh gốc.
-- Openverse có sẵn trong tool nhưng **mặc định TẮT**: chủ yếu là ảnh Flickr cũ
-  500-1024px, sau crop dọc chỉ còn dưới 600px → luôn mờ. Chọn trong ô "Nguồn"
-  nếu vẫn muốn dùng.
-- Mỗi ảnh tải về đều ghi `credits.txt` cạnh ảnh:
-  `tên_file | license | tác giả | nguồn | trang gốc` (ảnh báo ghi domain báo +
-  link bài). CC-BY cần ghi tên tác giả — dán dòng tương ứng vào phần mô tả
-  video nếu cần.
-- Tự thêm folder ảnh vào danh sách nguồn video ở tab 1 (bỏ tick nếu không muốn).
 
 ## Cách dùng
 

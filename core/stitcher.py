@@ -14,7 +14,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
-from PIL import Image, ImageFilter, ImageOps
+from PIL import Image, ImageOps
 
 try:
     from .ffmpeg_util import (IMG_EXT, VID_EXT, find_ffmpeg, find_ffprobe,
@@ -649,15 +649,32 @@ def _kb_center(v):
         return 0.5
 
 
-def _cover_crop(im, iw, ih, focus=None, use_face=True):
-    """Cắt ảnh cho ĐẦY khung iw x ih (giữ tỉ lệ, cắt phần thừa)."""
+def _prepare_image(path, out_w, out_h, bg_color, focus=None, use_face=True):
+    """Ảnh -> PNG đã cover-crop 9:16, xử lý alpha + EXIF.
+
+    focus: (fx, fy) tỉ lệ 0..1 — tâm vùng cần giữ. None = giữa khung.
+    use_face: tự tìm mặt chủ thể để đặt tâm crop (chống cắt mất mặt).
+    """
+    im = Image.open(path)
+    im = ImageOps.exif_transpose(im)
+    if im.mode in ("RGBA", "LA", "P"):
+        im = im.convert("RGBA")
+        base = Image.new("RGB", im.size, tuple(bg_color))
+        base.paste(im, mask=im.split()[-1])
+        im = base
+    else:
+        im = im.convert("RGB")
+
+    iw, ih = _internal_size(im.width, im.height, out_w, out_h)
     src_ratio = im.width / im.height
     dst_ratio = iw / ih
+
     # tâm crop: ưu tiên focus truyền vào, rồi tới mặt tìm được
     if focus is None and use_face:
         fc = facedetect.main_face(im)
         if fc:
             focus = (fc[0], fc[1])
+
     if src_ratio > dst_ratio:
         # ảnh ngang hơn khung -> cắt hai bên, giữ trọn chiều cao
         nw = int(round(im.height * dst_ratio))
@@ -673,65 +690,6 @@ def _cover_crop(im, iw, ih, focus=None, use_face=True):
         y = max(0, min(im.height - nh, y))
         im = im.crop((0, y, im.width, y + nh))
     return im.resize((iw, ih), Image.LANCZOS)
-
-
-def _prepare_image(path, out_w, out_h, bg_color, focus=None, use_face=True,
-                   fit="auto"):
-    """Ảnh -> PNG đã dựng theo khung 9:16, xử lý alpha + EXIF.
-
-    focus: (fx, fy) tỉ lệ 0..1 — tâm vùng cần giữ. None = giữa khung.
-    use_face: tự tìm mặt chủ thể để đặt tâm crop (chống cắt mất mặt).
-
-    fit (quyết định độ NÉT — quan trọng với ảnh BÁO, xem core/images.py):
-      "cover"   : phóng cho đầy khung rồi cắt phần thừa. Ảnh dọc/ảnh gốc to
-                  thì nét, nhưng ảnh NGANG 1200x630 bị cắt còn 354px bề ngang
-                  rồi phóng 3x -> mờ.
-      "blur"    : ảnh HIỆN TRỌN VẸN giữa khung, hai bên là chính ảnh đó phóng
-                  mờ. Ảnh 1200x630 hiện ở 1080x567 = thu nhỏ 0.9x -> NÉT.
-                  Đây là cách các bản tin TV vẫn làm với ảnh ngang.
-      "contain" : như "blur" nhưng nền là màu trơn bg_color.
-      "auto"    : tự chọn — ảnh ĐỦ to để tràn viền mà vẫn nét thì "cover",
-                  còn lại "blur". Nhờ vậy ảnh báo ngang 1200x630 vẫn nét.
-    """
-    im = Image.open(path)
-    im = ImageOps.exif_transpose(im)
-    if im.mode in ("RGBA", "LA", "P"):
-        im = im.convert("RGBA")
-        base = Image.new("RGB", im.size, tuple(bg_color))
-        base.paste(im, mask=im.split()[-1])
-        im = base
-    else:
-        im = im.convert("RGB")
-
-    iw, ih = _internal_size(im.width, im.height, out_w, out_h)
-
-    if fit == "auto":
-        # "cover" chỉ nét khi cạnh BỊ CẮT vẫn đủ to: ảnh ngang giữ nguyên
-        # chiều cao -> cần im.height >= ih; ảnh dọc giữ nguyên chiều ngang
-        # -> cần im.width >= iw. Thiếu thì phải phóng to = mờ -> dùng "blur".
-        if im.width / im.height > iw / ih:
-            fit = "cover" if im.height >= ih else "blur"
-        else:
-            fit = "cover" if im.width >= iw else "blur"
-
-    if fit in ("blur", "contain"):
-        # nền: ảnh phóng đầy khung (blur) hoặc màu trơn (contain)
-        if fit == "blur":
-            bg = _cover_crop(im, iw, ih, focus, use_face)
-            bg = bg.filter(ImageFilter.GaussianBlur(max(10, ih // 40)))
-            # tối bớt để ảnh chính nổi lên, không bị nền "tranh" với ảnh
-            bg = Image.blend(bg, Image.new("RGB", bg.size, (0, 0, 0)), 0.28)
-        else:
-            bg = Image.new("RGB", (iw, ih), tuple(bg_color))
-        # ảnh chính: thu cho VỪA khung, canh giữa (không cắt gì)
-        sc = min(iw / im.width, ih / im.height)
-        fw = max(1, int(round(im.width * sc)))
-        fh = max(1, int(round(im.height * sc)))
-        fg = im.resize((fw, fh), Image.LANCZOS)
-        bg.paste(fg, ((iw - fw) // 2, (ih - fh) // 2))
-        return bg
-
-    return _cover_crop(im, iw, ih, focus, use_face)
 
 
 def _escape_filter_path(p):
@@ -1438,8 +1396,7 @@ class Stitcher:
         path = sc["path"]
         frames = sc["frames"]
         im = _prepare_image(path, out_w, out_h, bg,
-                            use_face=self.cfg.get("face_focus", True),
-                            fit=self.cfg.get("img_fit", "auto"))
+                            use_face=self.cfg.get("face_focus", True))
         iw, ih = im.size
         tmp_png = Path(str(out) + ".png")
         im.save(tmp_png)
