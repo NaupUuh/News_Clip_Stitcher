@@ -18,6 +18,8 @@ GIẤY PHÉP: mặc định chỉ lấy ảnh dùng thương mại được (CC0
 CC-BY). CC-BY cần ghi tên tác giả — mỗi ảnh tải về đều kèm 1 dòng credit trong
 `credits.txt` cạnh ảnh, để anh dán vào phần mô tả nếu cần.
 """
+import base64
+import html as html_mod
 import json
 import re
 import ssl
@@ -28,7 +30,8 @@ import urllib.request
 from pathlib import Path
 
 __all__ = ["SOURCES", "search", "search_openverse", "search_wikimedia",
-           "download", "find_for_keywords", "safe_name", "IMG_EXT"]
+           "download", "find_for_keywords", "find_for_articles",
+           "resolve_gnews", "article_images", "safe_name", "IMG_EXT"]
 
 UA = ("NewsClipStitcher/1.24 (Windows; tin tuc 9:16; "
       "+https://github.com/NaupUuh/News_Clip_Stitcher)")
@@ -243,6 +246,311 @@ def search_openverse(query: str, n: int = 8, min_w: int = 800,
     return out[:n]
 
 
+# ─────────────── ảnh ĐÚNG TIN: lấy từ chính bài báo nguồn ───────────────
+# Vì sao cần: ảnh stock (Wikimedia) chỉ đúng CHỦ ĐỀ, không đúng TIN. Tin
+# "Trump họp báo ở Nhà Trắng hôm nay" mà ảnh lại là chân dung Trump 2017 —
+# người xem thấy sai ngay. Ảnh trên chính bài báo thì đúng người/đúng việc/
+# đúng thời điểm.
+#
+# Luồng: link Google News -> (giải mã) -> link bài thật -> og:image.
+#
+# CẢNH BÁO CHẤT LƯỢNG: og:image của báo gần như luôn là ảnh NGANG (1200x630,
+# 1920x1080). Cover-crop vào khung dọc 9:16 chỉ còn 354-607px bề ngang ->
+# phóng 1.8-3.0x = MỜ. Muốn nét phải để ảnh VỪA KHUNG + NỀN MỜ (stitcher
+# `img_fit="blur"`): ảnh 1200x630 hiện ở 1080x567 = thu nhỏ 0.9x -> nét.
+# Đó là lý do stitcher có thêm chế độ fit "blur".
+
+# Header Chrome ĐẦY ĐỦ. Nhiều báo (NYT, AP) chặn 403 nếu thiếu sec-ch-ua /
+# Sec-Fetch-*; chỉ có User-Agent là KHÔNG đủ (đã thử: 403 với UA thường,
+# 200 với bộ header này).
+BROWSER_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36")
+BROWSER_HDR = {
+    "User-Agent": BROWSER_UA,
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+    "sec-ch-ua-mobile": "?0",
+    "sec-ch-ua-platform": '"Windows"',
+    "Sec-Fetch-Dest": "document",
+    "Sec-Fetch-Mode": "navigate",
+    "Sec-Fetch-Site": "none",
+    "Sec-Fetch-User": "?1",
+    "Upgrade-Insecure-Requests": "1",
+}
+
+
+def _get_html(url: str, timeout: int = 25) -> str:
+    """GET 1 trang HTML bằng header Chrome đầy đủ. Lỗi -> ''."""
+    req = urllib.request.Request(url, headers=BROWSER_HDR)
+    with _open_req(req, timeout) as r:
+        return r.read(1_500_000).decode("utf-8", "replace")
+
+
+def resolve_gnews(url: str, timeout: int = 25) -> str:
+    """Link Google News -> link bài báo THẬT. Trả '' nếu không giải được.
+
+    Google News không đưa link báo trực tiếp mà bọc qua /rss/articles/<id>.
+    Có 2 đời id:
+      1. Kiểu CŨ — URL báo nằm ngay trong chuỗi base64, giải tại chỗ, không
+         cần mạng.
+      2. Kiểu MỚI — id là protobuf, phải gọi batchexecute kèm 2 tham số
+         `data-n-a-sg` (chữ ký) + `data-n-a-ts` (thời điểm) lấy từ chính
+         trang đó. Thiếu 2 tham số này thì Google trả lỗi.
+    """
+    if not url:
+        return ""
+    if "news.google.com" not in url:
+        return url                      # đã là link báo thật
+    m = re.search(r"/articles/([A-Za-z0-9_\-]+)", url)
+    if not m:
+        return ""
+    cid = m.group(1)
+
+    # (1) kiểu cũ — giải base64
+    try:
+        raw = base64.urlsafe_b64decode(cid + "=" * (-len(cid) % 4))
+        mm = re.search(rb"https?://[^\x00-\x20\"'<>\\]+", raw)
+        if mm:
+            u = mm.group(0).decode("utf-8", "replace")
+            if "news.google.com" not in u:
+                return u
+    except Exception:
+        pass
+
+    # (2) kiểu mới — batchexecute
+    try:
+        page = _get_html(f"https://news.google.com/rss/articles/{cid}", timeout)
+        sg = re.search(r'data-n-a-sg="([^"]+)"', page)
+        ts = re.search(r'data-n-a-ts="([^"]+)"', page)
+        if not (sg and ts):
+            return ""
+        inner = ('["garturlreq",[["X","X",["X","X"],null,null,1,1,"US:en",'
+                 'null,1,null,null,null,null,null,0,1],"X","X",1,[1,1,1],1,1,'
+                 'null,0,0,null,0],"%s",%s,"%s"]'
+                 % (cid, ts.group(1), sg.group(1)))
+        body = "f.req=" + urllib.parse.quote(json.dumps([["Fbv4je", inner]]))
+        req = urllib.request.Request(
+            "https://news.google.com/_/DotsSplashUi/data/batchexecute",
+            data=body.encode(),
+            headers={**BROWSER_HDR,
+                     "Content-Type":
+                         "application/x-www-form-urlencoded;charset=UTF-8",
+                     "Sec-Fetch-Site": "same-origin"})
+        with _open_req(req, timeout) as r:
+            txt = r.read().decode("utf-8", "replace")
+        arr = json.loads(txt.split("\n\n")[1])
+        payload = json.loads(arr[0][2])
+        out = payload[1] if isinstance(payload, list) and len(payload) > 1 else ""
+        return out if isinstance(out, str) and out.startswith("http") else ""
+    except Exception:
+        return ""
+
+
+def _img_from_srcset(v: str):
+    """Lấy URL to nhất trong 1 thuộc tính srcset."""
+    best, best_w = None, -1
+    for part in (v or "").split(","):
+        bits = part.strip().split()
+        if not bits:
+            continue
+        w = 0
+        if len(bits) > 1 and bits[1].endswith("w"):
+            try:
+                w = int(bits[1][:-1])
+            except ValueError:
+                w = 0
+        if w > best_w:
+            best, best_w = bits[0], w
+    return best
+
+
+def article_images(url: str, timeout: int = 25) -> list[str]:
+    """Danh sách ảnh của 1 bài báo, ảnh chính trước.
+
+    Thứ tự: og:image -> twitter:image -> ảnh lớn nhất trong bài. Trả [] nếu
+    không lấy được trang hoặc bài không có ảnh.
+    """
+    try:
+        page = _get_html(url, timeout)
+    except Exception:
+        return []
+    if not page:
+        return []
+    out = []
+    # 1. og:image (chuẩn phổ biến nhất, luôn là ảnh đại diện bài)
+    for pat in (r'<meta[^>]+(?:property|name)=["\']og:image(?::url)?["\'][^>]+content=["\']([^"\']+)',
+                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']og:image(?::url)?["\']'):
+        m = re.search(pat, page, re.I)
+        if m:
+            out.append(html_mod.unescape(m.group(1).strip()))
+            break
+    # 2. twitter:image (nhiều báo khai khác og:image)
+    for pat in (r'<meta[^>]+(?:property|name)=["\']twitter:image["\'][^>]+content=["\']([^"\']+)',
+                r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']twitter:image["\']'):
+        m = re.search(pat, page, re.I)
+        if m:
+            out.append(html_mod.unescape(m.group(1).strip()))
+            break
+    # 3. ảnh lớn nhất trong bài — chỉ lấy khi có srcset/data-src rõ ràng, vì
+    #    <img> trong bài hay là icon/lazy-placeholder 1px.
+    cands = []
+    for m in re.finditer(r"<img\b[^>]*>", page, re.I):
+        tag = m.group(0)
+        u = None
+        sm = re.search(r'\bsrcset=["\']([^"\']+)', tag, re.I)
+        if sm:
+            u = _img_from_srcset(sm.group(1))
+        if not u:
+            for a in ("data-src", "data-original", "data-lazy-src", "src"):
+                am = re.search(r'\b%s=["\']([^"\']+)' % a, tag, re.I)
+                if am and not am.group(1).startswith("data:"):
+                    u = am.group(1)
+                    break
+        if not u:
+            continue
+        if re.search(r"(sprite|logo|icon|avatar|placeholder|blank|1x1|pixel)",
+                     u, re.I):
+            continue
+        cands.append(u)
+    for u in cands:
+        if len(out) >= 4:
+            break
+        out.append(u)
+
+    # chuẩn hoá + bỏ trùng, giữ thứ tự
+    seen, fin = set(), []
+    for u in out:
+        u = (u or "").strip()
+        if u.startswith("//"):
+            u = "https:" + u
+        elif u.startswith("/"):
+            try:
+                p = urllib.parse.urlsplit(url)
+                u = "%s://%s%s" % (p.scheme, p.netloc, u)
+            except Exception:
+                continue
+        if not u.startswith("http"):
+            continue
+        k = u.split("?")[0]
+        if k in seen:
+            continue
+        seen.add(k)
+        fin.append(u)
+    return fin
+
+
+def article_image(url: str, timeout: int = 25):
+    """Ảnh đại diện của 1 bài báo. Trả (url_ảnh, lỗi)."""
+    imgs = article_images(url, timeout)
+    if imgs:
+        return imgs[0], None
+    return None, "bài không lấy được ảnh"
+
+
+def find_for_articles(items, out_dir, per_article: int = 1, log=print,
+                      min_w: int = 1200, max_mb: float = 20.0) -> list[dict]:
+    """Với mỗi tin: lấy ảnh từ CHÍNH bài báo của tin đó.
+
+    `items` = list dict có 'link' (link Google News hoặc link báo thật) và
+    'title'. Trả list {keyword, file, title, creator, license, source, page}
+    — CÙNG dạng với find_for_keywords để GUI dùng chung 1 đường.
+
+    `min_w` = BỀ NGANG tối thiểu (không phải cạnh nhỏ nhất): ảnh báo là ảnh
+    ngang 1200x630, min(w,h)=630 nhưng bề ngang mới quyết định độ nét khi
+    dựng khung dọc. 1200 là mức thấp nhất còn dùng được (hiện ở 1080x567 =
+    thu nhỏ 0.9x -> nét). Chất lượng cuối do `img_fit` quyết định ở khâu
+    render (xem stitcher._prepare_image).
+
+    Thứ tự ưu tiên ảnh của mỗi tin:
+      1. `it["image"]` — ảnh có SẴN trong RSS báo (nhanh, không bị 403).
+      2. og:image của bài — dùng khi (1) thiếu hoặc quá nhỏ.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    done, lines, used = [], [], set()
+    per_article = max(1, min(4, int(per_article or 1)))
+    for it in items or []:
+        title = str(it.get("title") or "").strip()
+        link = str(it.get("link") or "").strip()
+        src = str(it.get("source") or "").strip()
+        if not link:
+            log("  ! tin không có link — bỏ qua")
+            continue
+        log(f"📰 {src or '?'} — {title[:60]}")
+        real = resolve_gnews(link)
+        # Tin lấy từ RSS báo trực tiếp đã có SẴN ảnh của bài ("image") — dùng
+        # luôn, khỏi tải lại trang (nhanh hơn + không bị 403 như NYT/AP).
+        urls = []
+        if it.get("image"):
+            urls.append(str(it["image"]))
+        if not urls and real:
+            urls = article_images(real)
+        if not urls:
+            log("    ! bài không lấy được ảnh")
+            continue
+        n_ok, n_err, small = 0, 0, False
+        for u in urls:
+            if n_ok >= per_article:
+                break
+            key = u.split("?")[0]
+            if key in used:
+                continue
+            name = f"{safe_name(src or 'bao')}_{safe_name(title)[:30]}"
+            p, err = download(u, out_dir, name=name, max_mb=max_mb,
+                              min_side=0, min_w=min_w, target_w=0)
+            if err:
+                if n_err < 2:
+                    log(f"    ! bỏ qua ảnh: {err}")
+                n_err += 1
+                if "bề ngang nhỏ" in err or "ảnh nhỏ" in err:
+                    small = True
+                continue
+            n_ok += 1
+            used.add(key)
+            done.append({"keyword": title, "file": str(p),
+                         "title": f"{src} — {title}"[:90],
+                         "creator": src, "license": "ảnh bài báo (dùng nội bộ)",
+                         "source": src, "page": real or link})
+            lines.append("%s | %s | %s" % (p.name, src or "?", real))
+        # Ảnh trong RSS quá nhỏ (Guardian chỉ phát 700px) -> thử og:image
+        # của chính bài, thường là bản 1200x630.
+        if not n_ok and small and real:
+            for u in article_images(real):
+                key = u.split("?")[0]
+                if key in used:
+                    continue
+                name = f"{safe_name(src or 'bao')}_{safe_name(title)[:30]}"
+                p, err = download(u, out_dir, name=name, max_mb=max_mb,
+                                  min_side=0, min_w=min_w, target_w=0)
+                if err:
+                    if n_err < 3:
+                        log(f"    ! og:image bỏ qua: {err}")
+                    n_err += 1
+                    continue
+                n_ok += 1
+                used.add(key)
+                done.append({"keyword": title, "file": str(p),
+                             "title": f"{src} — {title}"[:90],
+                             "creator": src,
+                             "license": "ảnh bài báo (dùng nội bộ)",
+                             "source": src, "page": real or link})
+                lines.append("%s | %s | %s" % (p.name, src or "?", real or link))
+                break
+        log(f"  → {n_ok} ảnh")
+        if not n_ok:
+            log("  ! không tải được ảnh nào cho tin này")
+    if lines:
+        try:
+            f = out_dir / "credits.txt"
+            old = f.read_text(encoding="utf-8") if f.exists() else ""
+            f.write_text((old + "\n".join(lines) + "\n").lstrip("\n"),
+                         encoding="utf-8")
+        except Exception:
+            pass
+    return done
+
+
 # ───────────────────────────── gộp 2 nguồn ─────────────────────────────
 def search(query: str, n: int = 8, sources=SOURCES, min_w: int = 800,
            log=print, pause: float = 0.0) -> list[dict]:
@@ -275,7 +583,7 @@ def search(query: str, n: int = 8, sources=SOURCES, min_w: int = 800,
 def download(url: str, dest_dir, name: str | None = None,
              max_mb: float = 15.0, min_side: int = 500,
              timeout: int = 40, thumb: str | None = None,
-             target_w: int = 1600):
+             target_w: int = 1600, min_w: int = 0):
     """Tải 1 ảnh về dest_dir. Trả (path, lỗi).
 
     Kiểm tra thật bằng Pillow: file hỏng / quá nhỏ / không phải ảnh -> xoá,
@@ -343,6 +651,12 @@ def download(url: str, dest_dir, name: str | None = None,
         if min(w, h) < min_side:
             path.unlink(missing_ok=True)
             return None, f"ảnh nhỏ {w}x{h}"
+        # `min_w` lọc theo BỀ NGANG (ảnh BÁO là ảnh ngang: 1200x630 có
+        # min(w,h)=630 nhưng bề ngang 1200 mới là thứ quyết định độ nét khi
+        # dựng khung dọc). Đừng dùng min_side cho ảnh báo -> loại oan.
+        if min_w and w < min_w:
+            path.unlink(missing_ok=True)
+            return None, f"bề ngang nhỏ {w}px"
         # bản thu nhỏ nhỏ hơn mong đợi -> thử lại bằng file gốc
         if target_w and w < target_w and used != url and url:
             try:
@@ -351,7 +665,7 @@ def download(url: str, dest_dir, name: str | None = None,
                 pass
             return download(url, dest_dir, name=name, max_mb=max_mb,
                             min_side=min_side, timeout=timeout,
-                            thumb=None, target_w=0)
+                            thumb=None, target_w=0, min_w=min_w)
     except Exception as e:
         try:
             path.unlink(missing_ok=True)

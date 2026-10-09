@@ -60,6 +60,79 @@ TOPICS = {
     "Khoa học":     ("t", "CAAqJggKIiBDQkFTRWdvSUwyMHZNRFp0Y1RjU0FtVnVHZ0pWVXlnQVAB"),
 }
 
+# ── RSS TRỰC TIẾP CỦA BÁO (nguồn tin "sạch") ───────────────────────────────
+# Vì sao cần: RSS của Google News KHÔNG kèm ảnh, và <link> là
+# news.google.com/rss/articles/<blob> — blob mã hoá AES nên KHÔNG giải ra URL
+# báo được (đã đo: batchexecute của Google chặn theo IP, không dùng được cho
+# tool chạy nhiều máy). Muốn "ảnh ĐÚNG TIN" thì phải lấy tin từ RSS của chính
+# báo: link là URL thật VÀ <media:content>/<enclosure> có sẵn ảnh của bài.
+# Đo thật 2026-10-09: 22/35 feed sống, ảnh to (NPR 6000x4000, Politico
+# 4000x2666) — 12% đủ nét để tràn viền 9:16, 88% còn lại dùng chế độ "nền mờ"
+# của stitcher (ảnh hiện trọn vẹn, vẫn nét).
+DIRECT_FEEDS = {
+    "Chính trị Mỹ": [
+        # (đo 2026-10-09: feed sống + có ảnh trong RSS)
+        "https://rss.nytimes.com/services/xml/rss/nyt/Politics.xml",
+        "https://rss.nytimes.com/services/xml/rss/nyt/US.xml",
+        "https://feeds.npr.org/1014/rss.xml",
+        "https://feeds.npr.org/1001/rss.xml",
+        "https://thehill.com/news/feed/",
+        "https://thehill.com/homenews/feed/",
+        "https://nypost.com/news/feed/",
+        "https://nypost.com/us-news/feed/",
+        "https://www.theguardian.com/us-news/rss",
+        "https://www.theguardian.com/world/rss",
+        "https://abcnews.go.com/abcnews/politicsheadlines",
+        "https://abcnews.go.com/abcnews/topstories",
+        "https://rss.politico.com/politics-news.xml",
+        "https://rss.politico.com/congress.xml",
+        "https://moxie.foxnews.com/google-publisher/politics.xml",
+        "https://moxie.foxnews.com/google-publisher/us.xml",
+        "http://rss.cnn.com/rss/cnn_allpolitics.rss",
+        "http://rss.cnn.com/rss/cnn_us.rss",
+        "https://feeds.skynews.com/feeds/rss/us.xml",
+        "https://feeds.skynews.com/feeds/rss/world.xml",
+        "https://www.thedailybeast.com/arc/outboundfeeds/rss/",
+        "https://www.theblaze.com/feeds/feed.rss",
+        "https://feeds.bbci.co.uk/news/world/us_and_canada/rss.xml",
+        "https://www.cbsnews.com/latest/rss/politics",
+        "https://www.cbsnews.com/latest/rss/main",
+        "https://feeds.washingtonpost.com/rss/politics",
+        "https://feeds.washingtonpost.com/rss/national",
+        "https://www.pbs.org/newshour/feeds/rss/politics",
+        "https://www.pbs.org/newshour/feeds/rss/headlines",
+        "https://fortune.com/feed/",
+        "https://www.nydailynews.com/feed/",
+        "https://www.upi.com/rss/Top_News/",
+        "https://www.upi.com/rss/US/",
+        "https://www.newsweek.com/rss",
+        "https://www.axios.com/feeds/feed.rss",
+        "https://www.usatoday.com/rss/news/",
+        "https://www.washingtonexaminer.com/feed",
+        "https://www.independent.co.uk/news/world/americas/rss",
+        "https://www.nbcnews.com/feed/politics",
+        "https://www.nbcnews.com/feed/us",
+        "https://www.cnbc.com/id/10000113/device/rss/rss.html",
+        "https://www.latimes.com/politics/rss2.0.xml",
+        "https://slate.com/feeds/all.rss",
+        "https://www.salon.com/feed/",
+        "https://www.huffpost.com/section/politics/feed",
+        "https://www.rawstory.com/feed/",
+        "https://www.mediaite.com/feed/",
+        "https://www.chicagotribune.com/feed/",
+        "https://www.theatlantic.com/feed/all/",
+        "https://time.com/feed/",
+        "https://www.jurist.org/feed/",
+    ],
+}
+# Dấu hiệu ảnh trong 1 <item> của RSS, theo thứ tự ưu tiên (ảnh to trước).
+_RSS_IMG_PATTERNS = (
+    r'<media:content[^>]+url=["\']([^"\']+)',
+    r'<enclosure[^>]+url=["\']([^"\']+)',
+    r'<media:thumbnail[^>]+url=["\']([^"\']+)',
+    r'<img[^>]+src=["\']([^"\']+)',
+)
+
 # Lưới an toàn: chặn tin thể thao lọt vào chủ đề chính trị.
 # Search đã sạch (đo thật: 0/60), lưới này chỉ là DỰ PHÒNG — nên phải SIẾT CHẶT,
 # chỉ giữ từ gần như chắc chắn là thể thao. Đừng thêm từ mơ hồ kiểu "coach",
@@ -441,6 +514,145 @@ def _parse_age(s: str):
         return None
 
 
+# Tên báo cho đẹp (tra theo host của feed). Không có trong bảng thì lấy phần
+# tên miền chính (vd "example.com" -> "example").
+FEED_NAMES = {
+    "rss.nytimes.com": "New York Times", "feeds.npr.org": "NPR",
+    "thehill.com": "The Hill", "nypost.com": "New York Post",
+    "theguardian.com": "The Guardian", "abcnews.go.com": "ABC News",
+    "rss.politico.com": "Politico", "moxie.foxnews.com": "Fox News",
+    "rss.cnn.com": "CNN", "feeds.skynews.com": "Sky News",
+    "thedailybeast.com": "Daily Beast", "theblaze.com": "TheBlaze",
+    "feeds.bbci.co.uk": "BBC", "cbsnews.com": "CBS News",
+    "feeds.washingtonpost.com": "Washington Post", "pbs.org": "PBS",
+    "fortune.com": "Fortune", "nydailynews.com": "NY Daily News",
+    "upi.com": "UPI", "newsweek.com": "Newsweek", "axios.com": "Axios",
+    "usatoday.com": "USA Today", "washingtonexaminer.com": "Wash. Examiner",
+    "independent.co.uk": "The Independent", "nbcnews.com": "NBC News",
+    "cnbc.com": "CNBC", "latimes.com": "LA Times", "slate.com": "Slate",
+    "salon.com": "Salon", "huffpost.com": "HuffPost",
+    "rawstory.com": "Raw Story", "mediaite.com": "Mediaite",
+    "chicagotribune.com": "Chicago Tribune", "theatlantic.com": "The Atlantic",
+    "time.com": "TIME", "jurist.org": "JURIST",
+}
+
+
+def _feed_name(url: str) -> str:
+    host = url.split("/")[2].lower()
+    if host.startswith("www."):
+        host = host[4:]
+    if host in FEED_NAMES:
+        return FEED_NAMES[host]
+    parts = host.split(".")
+    return parts[-2].capitalize() if len(parts) >= 2 else host
+
+
+def _item_image(raw_item: str) -> str:
+    """Ảnh TO NHẤT của 1 <item> RSS.
+
+    Nhiều báo (Guardian...) liệt kê cùng 1 ảnh ở nhiều cỡ qua nhiều thẻ
+    <media:content width="140|460|700">. Lấy thẻ đầu là lấy bản 140px -> vô
+    dụng cho video. Nên: gom mọi thẻ có `width`, chọn width lớn nhất; không
+    thẻ nào ghi width thì lấy thẻ đầu (media:content -> enclosure ->
+    media:thumbnail -> img).
+    """
+    best_u, best_w = "", -1
+    for m in re.finditer(r"<(?:media:content|media:thumbnail|enclosure|img)\b[^>]*>",
+                         raw_item, re.I):
+        tag = m.group(0)
+        um = re.search(r'url=["\']([^"\']+)', tag, re.I) or \
+            re.search(r'src=["\']([^"\']+)', tag, re.I)
+        if not um:
+            continue
+        wm = re.search(r'width=["\']?(\d+)', tag, re.I)
+        w = int(wm.group(1)) if wm else 0
+        if w > best_w:
+            best_w, best_u = w, html.unescape(um.group(1)).strip()
+    if best_u:
+        return best_u
+    # dự phòng: ảnh nhúng trong <description>
+    for pat in _RSS_IMG_PATTERNS:
+        m = re.search(pat, raw_item, re.I)
+        if m:
+            return html.unescape(m.group(1)).strip()
+    return ""
+
+
+def fetch_direct(topics=None, hours: int = 24, per_topic: int = 60,
+                 log=print) -> list[dict]:
+    """Lấy tin từ RSS TRỰC TIẾP của báo — có LINK THẬT + ẢNH của bài.
+
+    Khác fetch_rss (Google News): mỗi item ở đây có thêm khóa "image" (URL ảnh
+    đúng của bài) và "link" là URL báo thật -> tab "Tìm ảnh theo tin" lấy được
+    ĐÚNG ảnh của tin đang chọn mà không phải đi tìm kiếm.
+    """
+    topics = topics or ["Chính trị Mỹ"]
+    feeds = []
+    for t in topics:
+        for u in DIRECT_FEEDS.get(t, []):
+            if u not in feeds:
+                feeds.append(u)
+    if not feeds:
+        return []
+
+    def grab(u):
+        try:
+            req = urllib.request.Request(u, headers={
+                "User-Agent": ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                               "AppleWebKit/537.36 (KHTML, like Gecko) "
+                               "Chrome/124.0.0.0 Safari/537.36"),
+                "Accept-Language": "en-US,en;q=0.9",
+            })
+            with urllib.request.urlopen(req, timeout=25) as r:
+                return u, r.read(3_000_000).decode("utf-8", "replace")
+        except Exception:
+            return u, ""
+
+    import concurrent.futures as _cf
+    with _cf.ThreadPoolExecutor(max_workers=12) as ex:
+        pages = list(ex.map(grab, feeds))
+
+    out, seen = [], set()
+    n_ok = n_img = 0
+    for u, raw in pages:
+        if not raw:
+            continue
+        n_ok += 1
+        src = _feed_name(u)
+        for it in re.findall(r"<item[ >](.*?)</item>", raw, re.S):
+            tm = re.search(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>",
+                           it, re.S)
+            lm = re.search(r"<link>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</link>",
+                           it, re.S)
+            dm = re.search(r"<pubDate>(.*?)</pubDate>", it, re.S)
+            if not (tm and lm):
+                continue
+            age = _parse_age(dm.group(1)) if dm else None
+            if age is None or age > hours:
+                continue
+            title = clean_title(html.unescape(tm.group(1)).strip(), src)
+            if _is_sport(title):
+                continue
+            key = re.sub(r"\W+", "", title.lower())[:60]
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            img = _item_image(it)
+            if img:
+                n_img += 1
+            out.append({
+                "title": title,
+                "source": src,
+                "age_h": age,
+                "link": html.unescape(lm.group(1)).strip(),
+                "topic": topics[0],
+                "image": img,
+            })
+    log(f"  RSS báo trực tiếp: {n_ok}/{len(feeds)} feed sống, "
+        f"{len(out)} tin ({n_img} có sẵn ảnh)")
+    return out[:per_topic] if per_topic else out
+
+
 def fetch_rss(topics=None, hours: int = 24, per_topic: int = 60,
               log=print) -> list[dict]:
     """Lấy tin từ Google News RSS. Trả list dict: title, source, age_h, link, topic."""
@@ -505,6 +717,36 @@ def fetch_rss(topics=None, hours: int = 24, per_topic: int = 60,
         log(f"  (đã loại {n_skip_sport} tin thể thao lạc chủ đề)")
     out.sort(key=lambda x: x["age_h"])
     return out[:per_topic] if per_topic else out
+
+
+def fetch_news(topics=None, hours: int = 24, per_topic: int = 60,
+               log=print) -> list[dict]:
+    """Nguồn tin MẶC ĐỊNH: RSS báo trực tiếp (có link thật + ảnh) TRƯỚC,
+    thiếu thì bù bằng Google News RSS.
+
+    Vì sao ưu tiên báo trực tiếp: tin có "image" + "link" thật -> tab "Tìm ảnh
+    theo tin" lấy được ĐÚNG ảnh của bài. Google News chỉ là nguồn bù vì không
+    kèm ảnh và link là blob mã hoá không giải được.
+    """
+    direct = fetch_direct(topics, hours=hours, per_topic=per_topic, log=log)
+    if len(direct) >= per_topic:
+        return direct[:per_topic]
+    seen = {re.sub(r"\W+", "", d["title"].lower())[:60] for d in direct}
+    need = per_topic - len(direct)
+    rest = fetch_rss(topics, hours=hours, per_topic=need * 3, log=log)
+    for r in rest:
+        k = re.sub(r"\W+", "", r["title"].lower())[:60]
+        if k in seen:
+            continue
+        seen.add(k)
+        r.setdefault("image", "")
+        direct.append(r)
+        if len(direct) >= per_topic:
+            break
+    direct.sort(key=lambda x: x.get("age_h", 99))
+    log(f"  tổng {len(direct)} tin "
+        f"({sum(1 for d in direct if d.get('image'))} có sẵn ảnh)")
+    return direct
 
 
 # ── Nhờ Gemini viết lại ────────────────────────────────────────────────────
@@ -929,7 +1171,10 @@ def build_plan(topics=None, hours: int = 24, limit: int = 8,
     """
     config_path = Path(config_path) if config_path else None
     log(f"→ Lấy tin {hours}h qua: {', '.join(topics or ['Chính trị Mỹ'])}")
-    items = fetch_rss(topics, hours=hours, per_topic=80, log=log)
+    # fetch_news = RSS báo trực tiếp (có link thật + ảnh) trước, Google bù sau.
+    # Nhờ vậy mỗi item có "image"/"link" -> tab "Tìm ảnh theo tin" lấy được
+    # ĐÚNG ảnh của bài thay vì ảnh stock chung chung.
+    items = fetch_news(topics, hours=hours, per_topic=80, log=log)
     if not items:
         return [], "Không lấy được tin nào từ RSS (kiểm tra mạng)."
     log(f"  tổng {len(items)} tin trong {hours}h")

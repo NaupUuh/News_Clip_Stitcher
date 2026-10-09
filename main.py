@@ -33,7 +33,7 @@ from core import images as images_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.24.2"
+APP_VERSION = "1.25.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -154,6 +154,8 @@ DEFAULTS = {
     "img_dir": "",
     "img_per_kw": 3,
     "img_sources": "wikimedia",
+    "img_mode": "news",
+    "img_fit": "auto",
     "img_add_folder": True,
 }
 
@@ -1021,8 +1023,9 @@ class App:
         self._bn_refresh()
 
         # 7. Tìm ảnh theo tin — KHÔNG cần API key (Wikimedia + Openverse)
-        g = ttk.LabelFrame(body, text="7. Tìm ảnh theo tin (tự tải theo từ khoá AI)",
-                           padding=6)
+        g = ttk.LabelFrame(
+            body, text="7. Tìm ảnh theo tin (ảnh ĐÚNG bài báo hoặc theo từ khoá)",
+            padding=6)
         g.pack(fill="x", **pad)
         f = ttk.Frame(g); f.pack(fill="x", pady=2)
         ttk.Label(f, text="Từ khoá:").pack(side="left")
@@ -1055,14 +1058,41 @@ class App:
         ttk.Checkbutton(f, text="Thêm folder vào danh sách nguồn video",
                         variable=self.im_addfolder).pack(side="left", padx=(10, 0))
 
+        f = ttk.Frame(g); f.pack(fill="x", pady=2)
+        ttk.Label(f, text="Kiểu lấy ảnh:").pack(side="left")
+        self.im_mode = tk.StringVar(value=str(self.cfg.get(
+            "img_mode", "news") or "news"))
+        ttk.Combobox(f, textvariable=self.im_mode, width=30, state="readonly",
+                     values=("news", "keyword", "both")).pack(side="left", padx=3)
+        ttk.Label(f, text="news = ảnh chính bài báo (đúng tin, nét nhất) · "
+                          "keyword = ảnh stock theo từ khoá · both = cả hai",
+                  foreground="#666").pack(side="left", padx=6)
+
+        f = ttk.Frame(g); f.pack(fill="x", pady=2)
+        ttk.Label(f, text="Hiển thị ảnh:").pack(side="left")
+        self.im_fit = tk.StringVar(value=str(self.cfg.get(
+            "img_fit", "auto") or "auto"))
+        ttk.Combobox(f, textvariable=self.im_fit, width=10, state="readonly",
+                     values=("auto", "cover", "blur")).pack(side="left", padx=3)
+        ttk.Label(f, text="auto = tự chọn (ảnh to tràn viền, ảnh nhỏ nền mờ — "
+                          "luôn nét nhất) · cover = luôn tràn viền · "
+                          "blur = luôn nền mờ",
+                  foreground="#666").pack(side="left", padx=6)
+
         f = ttk.Frame(g); f.pack(fill="x", pady=3)
         self.im_btn = ttk.Button(f, text="🖼 Tìm + tải ảnh",
                                  command=self._img_fetch)
         self.im_btn.pack(side="left", padx=2, ipadx=8)
+        self.im_news_btn = ttk.Button(f, text="📰 Ảnh đúng tin (cả loạt)",
+                                      command=self._img_fetch_news)
+        self.im_news_btn.pack(side="left", padx=2, ipadx=8)
         self.im_status = ttk.Label(f, text="", foreground="#0a6", wraplength=620,
                                    justify="left")
         self.im_status.pack(side="left", padx=8)
-        ttk.Label(g, text="Nguồn miễn phí KHÔNG cần API key: Wikimedia Commons "
+        ttk.Label(g, text="Kiểu 'news' = ảnh CHÍNH BÀI BÁO (đúng tin, nét nhất, "
+                          "lấy từ RSS báo + og:image).\n"
+                          "Kiểu 'keyword' = ảnh stock miễn phí KHÔNG cần API key: "
+                          "Wikimedia Commons "
                           "(ảnh chính phủ Mỹ = Public Domain). "
                           "Chỉ lấy ảnh CC0 / Public Domain / CC-BY (dùng thương mại "
                           "được); tự bỏ CC BY-SA, ND, NC.\n"
@@ -1117,6 +1147,59 @@ class App:
         except Exception as e:
             self.blog(f"! Không mở được folder: {e}")
 
+    def _img_fetch_news(self):
+        """Tải ảnh ĐÚNG BÀI cho TOÀN BỘ tin đang có (không cần chọn từ khoá)."""
+        if getattr(self, "_img_busy", False):
+            return
+        items = list(getattr(self, "news_items", None) or [])
+        if not items:
+            self.blog("! Chưa có tin nào — bấm 'Lấy tin mới' ở bảng trên trước.")
+            return
+        self._img_busy = True
+        self.save_config()
+        self.im_btn.config(state="disabled")
+        self.im_news_btn.config(state="disabled")
+        add_folder = bool(self.im_addfolder.get())
+        out_dir = self._img_out_dir()
+        self.im_status.config(text=f"Đang lấy ảnh {len(items)} tin...",
+                              foreground="#a60")
+        self.blog(f"→ Ảnh đúng tin: {len(items)} bài → {out_dir}")
+
+        def work():
+            ok = 0
+            try:
+                got = images_mod.find_for_articles(
+                    items, out_dir, per_article=1, log=self.blog)
+                ok = len(got)
+                if ok:
+                    self.blog(f"✓ {ok} ảnh đúng bài → {out_dir}")
+                else:
+                    self.blog("! Không lấy được ảnh nào từ bài báo.")
+            except Exception as e:
+                self.blog(f"! Lỗi lấy ảnh đúng tin: {e}")
+
+            def done():
+                self._img_busy = False
+                self.im_btn.config(state="normal")
+                self.im_news_btn.config(state="normal")
+                if ok:
+                    self.im_status.config(text=f"✓ {ok} ảnh đúng tin → {out_dir.name}",
+                                          foreground="#0a6")
+                    if add_folder:
+                        try:
+                            s = str(out_dir)
+                            if s not in self.folders:
+                                self.folders.append(s)
+                                self._refresh()
+                                self.log(f"Đã thêm folder ảnh vào nguồn video: {s}")
+                        except Exception:
+                            pass
+                else:
+                    self.im_status.config(text="Không có ảnh nào tải được.",
+                                          foreground="#c00")
+            self.root.after(0, done)
+        threading.Thread(target=work, daemon=True).start()
+
     def _img_fetch(self):
         """Tìm + tải ảnh trong luồng nền (mạng chậm, không được treo GUI)."""
         if getattr(self, "_img_busy", False):
@@ -1129,6 +1212,10 @@ class App:
         self._img_busy = True
         self.save_config()
         self.im_btn.config(state="disabled")
+        try:
+            self.im_news_btn.config(state="disabled")
+        except Exception:
+            pass
         # Đọc widget Tk ở MAIN THREAD (đọc từ thread nền -> Tcl ném lỗi)
         try:
             per = max(1, min(20, int(self.im_n.get())))
@@ -1137,6 +1224,7 @@ class App:
         srcs = self._img_sources_sel()
         add_folder = bool(self.im_addfolder.get())
         out_dir = self._img_out_dir()
+        mode = str(self.im_mode.get() or "news")
         self.im_status.config(text=f"Đang tìm {len(kws)} từ khoá...",
                               foreground="#a60")
         self.blog(f"→ Tìm ảnh: {len(kws)} từ khoá × {per} ảnh → {out_dir}")
@@ -1144,8 +1232,20 @@ class App:
         def work():
             ok = 0
             try:
-                got = images_mod.find_for_keywords(
-                    kws, out_dir, per_kw=per, sources=srcs, log=self.blog)
+                got = []
+                # (a) ẢNH ĐÚNG TIN: lấy từ chính bài báo của các tin đang có
+                if mode in ("news", "both"):
+                    items = list(getattr(self, "news_items", None) or [])
+                    if not items:
+                        self.blog("! Chưa có tin nào — bấm 'Lấy tin mới' ở "
+                                  "bảng trên trước (hoặc chọn kiểu 'keyword').")
+                    else:
+                        got += images_mod.find_for_articles(
+                            items, out_dir, per_article=1, log=self.blog)
+                # (b) ẢNH STOCK theo từ khoá
+                if mode in ("keyword", "both"):
+                    got += images_mod.find_for_keywords(
+                        kws, out_dir, per_kw=per, sources=srcs, log=self.blog)
                 ok = len(got)
                 if ok:
                     self.blog(f"✓ {ok} ảnh → {out_dir}")
@@ -1158,6 +1258,10 @@ class App:
             def done():
                 self._img_busy = False
                 self.im_btn.config(state="normal")
+                try:
+                    self.im_news_btn.config(state="normal")
+                except Exception:
+                    pass
                 if ok:
                     self.im_status.config(
                         text=f"✓ {ok} ảnh → {out_dir.name}", foreground="#0a6")
@@ -1215,7 +1319,8 @@ class App:
                 pass
             # mục 7: tìm ảnh theo tin
             for key, var in (("img_keywords", "im_kw"), ("img_dir", "im_out"),
-                             ("img_sources", "im_src")):
+                             ("img_sources", "im_src"), ("img_mode", "im_mode"),
+                             ("img_fit", "im_fit")):
                 try:
                     self.cfg[key] = str(getattr(self, var).get() or "").strip()
                 except Exception:
@@ -2149,6 +2254,13 @@ class App:
         cfg["interleave"] = bool(self.ileave_var.get())
         cfg["seed"] = None          # luôn random mỗi lần render
         cfg["bg_color"] = (0, 0, 0)
+        # Khung dọc 9:16: ảnh báo là ảnh NGANG (1200x630) -> "cover" cắt 2 bên
+        # chỉ còn 354px rồi phóng to = mờ. "auto" tự chọn: ảnh đủ to thì tràn
+        # viền, ảnh nhỏ thì nền mờ (ảnh hiện ở 1080x567 = thu nhỏ 0.9x -> nét).
+        try:
+            cfg["img_fit"] = str(self.im_fit.get() or "auto")
+        except Exception:
+            cfg["img_fit"] = "auto"
         cfg["audio"] = audio or ""
         return cfg
 

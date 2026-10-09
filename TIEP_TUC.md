@@ -1,6 +1,6 @@
 # TIẾP TỤC TOOL NÀY — đọc file này trước
 
-Cập nhật: 2026-10-09 · Phiên bản hiện tại: **v1.24.2**
+Cập nhật: 2026-10-09 · Phiên bản hiện tại: **v1.25.0**
 
 ## Cách tiếp tục (1 câu cho trợ lý)
 
@@ -34,12 +34,15 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   số giây đó; tốc độ đọc 15.6 ký tự/giây (đo thật 4 giọng)
 - Tab "Tin nóng 24h": chấm điểm độ nóng tin + Google News
 - Tự cập nhật qua GitHub (nút ⬆ Cập nhật trong tool)
-- **Tab 2 · Mục 7 "Tìm ảnh theo tin"**: tự tải ảnh stock theo từ khoá tin,
-  **KHÔNG cần API key** (`core/images.py`). Nút "⬅ Lấy từ tin đang chọn" lấy
-  luôn `item['keyword']` mà AI đã sinh sẵn. Nguồn: Wikimedia Commons.
-  Chỉ nhận ảnh CC0 / Public Domain / CC-BY (bỏ BY-SA, ND, NC); tự ghi
-  `credits.txt` (file | license | tác giả | nguồn | trang gốc) cạnh ảnh.
-  Tự thêm folder ảnh vào danh sách nguồn video tab 1.
+- **Tab 2 · Mục 7 "Ảnh đúng tin + ảnh stock"**, **KHÔNG cần API key**
+  (`core/images.py`, `core/news.py`):
+  - `img_mode="news"` (mặc định): ảnh **ĐÚNG BÀI BÁO** — lấy từ RSS trực tiếp
+    của ~51 báo (ảnh có sẵn), thiếu thì `og:image`. Nút "📰 Ảnh đúng tin (cả loạt)".
+  - `img_mode="keyword"`: ảnh stock Wikimedia Commons theo từ khoá.
+  - `img_mode="both"`: cả hai.
+  - `img_fit="auto"` (mặc định): tự chọn cover/blur từng ảnh → luôn nét nhất.
+  - Chỉ nhận CC0 / PD / CC-BY (bỏ BY-SA, ND, NC); tự ghi `credits.txt`.
+  - Tự thêm folder ảnh vào danh sách nguồn video tab 1.
 
 ## Việc CÒN LẠI / chờ anh quyết
 
@@ -47,14 +50,38 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
    Muốn lưu thì nói.
 2. **Tự rút từ khoá hay tự gõ** — ĐÃ CÓ nút "⬅ Lấy từ tin đang chọn" (lấy
    `item['keyword']` AI sinh sẵn, KHÔNG tốn thêm phí). Vẫn gõ tay được.
-3. ~~Key Pexels~~ — **KHÔNG CẦN NỮA**: mục 7 dùng Wikimedia Commons, miễn phí,
-   không cần đăng ký. Openverse có code sẵn nhưng mặc định TẮT (xem dưới).
+3. ~~Key Pexels~~ — **KHÔNG CẦN NỮA**: ảnh đúng tin lấy từ RSS báo, ảnh stock
+   từ Wikimedia Commons — cả hai miễn phí, không cần đăng ký.
 4. **Chyron crop / auto-skip** — chưa chốt cách xử lý.
 5. **Casing tiêu đề** (HOA toàn bộ hay Hoa Đầu Từ) — chưa chốt.
 6. ~~Tab "Tìm ảnh theo tin"~~ — **ĐÃ XONG** (tab 2, mục 7).
+6b. ~~"Ảnh phải đúng tin"~~ — **ĐÃ XONG v1.25.0**: `img_mode="news"` lấy ảnh
+   chính bài báo từ RSS trực tiếp của ~51 báo.
 7. Lỗi MC `WinError 2` — anh đã bỏ qua.
 
-## Bài học mục 7 (đọc trước khi sửa `core/images.py`)
+## Bài học mục 7 (đọc trước khi sửa `core/images.py` / `core/news.py`)
+
+- **KHÔNG dùng Google News làm nguồn ảnh.** Link `news.google.com/rss/articles/<CID>`
+  là blob **mã hoá AES**, KHÔNG giải được bằng base64/protobuf. Giải mã phải qua
+  `batchexecute` (cần `data-n-a-sg` + `data-n-a-ts` lấy từ HTML) — API nội bộ
+  của Google, **chặn theo IP, lúc được lúc không** (cùng 1 CID lúc 200 lúc 400).
+  Ảnh mirror `lh3.googleusercontent.com` mà Google phục vụ thì **cùng 1 ảnh
+  1024x1024 mặc định cho mọi bài** → vô dụng. **Đã bỏ hẳn hướng này.**
+- **Nguồn ảnh ĐÚNG TIN = RSS TRỰC TIẾP của báo** (`DIRECT_FEEDS` trong
+  `core/news.py`): link bài THẬT + ảnh có sẵn trong `<item>`, không cần giải mã,
+  không bị chặn. Đo thật: 39-41/51 feed sống, ~99 tin/24h, 88-100% có ảnh.
+- **Ảnh trong RSS có nhiều cỡ**: Guardian phát cùng 1 ảnh ở 140/460/700px qua
+  nhiều thẻ `<media:content width=...>`. Lấy thẻ đầu = lấy bản 140px. `_item_image()`
+  gom mọi thẻ rồi **chọn `width` lớn nhất**. (Guardian ký URL — đổi số trong URL
+  sang 2000px thì 401, nên chỉ dùng được bản lớn nhất có sẵn.)
+- **`min_w` của `find_for_articles` là BỀ NGANG, không phải cạnh nhỏ nhất.**
+  Ảnh báo 1200x630 có `min(w,h)=630` → dùng `min_side` sẽ loại oan. Mặc định 1200.
+- **`img_fit="auto"` là chìa khoá độ nét**: ảnh báo là ảnh NGANG, `cover` vào
+  khung 9:16 chỉ còn 354px rồi phóng 3x = mờ. `auto` so `_internal_size` của
+  cover vs blur rồi chọn cái NÉT HƠN. Đo thật: 88% ảnh báo cần `blur`.
+- **KHÔNG cố tải og:image của NYT/AP bằng UA thường** — 403. Cần header Chrome
+  đầy đủ (`Accept`, `Accept-Language`, `Sec-Fetch-*`) mới qua. Nhưng og:image
+  chỉ là đường DỰ PHÒNG; ảnh RSS đã đủ.
 
 - **Video là khung DỌC 9:16 và ảnh bị cover-crop** → bề ngang thật chỉ còn
   `h*9/16`. Ảnh 1920x1080 chỉ còn 607px rồi bị phóng 1.8x = **mờ**. Vì vậy
@@ -86,7 +113,7 @@ cd "C:/Users/Admin/Desktop/News_Clip_Stitcher"
 "C:/ReverseEngineering/Scripts/venv/Scripts/python.exe" -m py_compile main.py core/*.py
 
 # phát hành bản mới (tự bump version + commit + push)
-"C:/ReverseEngineering/Scripts/venv/Scripts/python.exe" release.py 1.24.2 "Mô tả thay đổi"
+"C:/ReverseEngineering/Scripts/venv/Scripts/python.exe" release.py 1.25.0 "Mô tả thay đổi"
 
 # đồng bộ lên ổ Z + đối chiếu MD5 (phải ra "N/N MD5 KHỚP")
 "C:/ReverseEngineering/Scripts/venv/Scripts/python.exe" sync_z.py
