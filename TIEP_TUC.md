@@ -1,6 +1,6 @@
 # TIẾP TỤC TOOL NÀY — đọc file này trước
 
-Cập nhật: 2026-10-09 · Phiên bản hiện tại: **v1.25.1**
+Cập nhật: 2026-10-14 · Phiên bản hiện tại: **v1.27.0**
 
 ## Cách tiếp tục (1 câu cho trợ lý)
 
@@ -38,6 +38,24 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   SSML — nhưng API vẫn nhận `style`/`speed` cũ mà không báo lỗi (bỏ qua im lặng),
   nên `VOICE_SETTINGS` không phải sửa. Điều khiển cách đọc bằng AUDIO TAG đặt
   trong chính câu text: `[whispering]` `[shouting]` `[laughing]` `[sighs]`.
+- **Bộ audio tag v4 (14/10/2026, v1.27.0)** — ĐO THẬT, không đoán:
+  - Tag PHẢI có ngoặc vuông `[whispers]` mới ăn. Viết trần `whispers …` →
+    v4 **ĐỌC TO** chữ đó ra tiếng. Tool tự bắt + cảnh báo + có nút bọc lại.
+  - Tag **không bị đọc to** khi đúng dạng (ASR đọc lại sạch).
+  - Tag **chỉ áp cho CÂU theo sau nó**, không áp cả file — đo nửa đầu/nửa cuối
+    file: tag ở đầu → nửa đầu −25.4 dB / nửa sau −22.8 dB; tag ở giữa →
+    nửa đầu −22.9 dB / nửa sau −27.6 dB. → dùng được để đổi giọng theo ngữ cảnh.
+  - Biên độ đổi **nhẹ** (~3 dB): `[shouts]` +1.8 dB, `[whispers]` −2.7 dB.
+    Đừng trông cậy tag làm to/nhỏ hẳn — muốn mạnh thì viết câu tự nhiên.
+  - `[pause]`/`[long pause]` gần như vô dụng (+0.16s) → ngắt nghỉ thật thì
+    dùng dấu câu (… , .) hoặc tách câu.
+  - 15 tag đã thử đều tạo file OK; `[sighs]` `[laughs]` `[breathing]`
+    `[clears throat]` **chèn tiếng động thật** (file dài hơn).
+  - **CHỈ v4 / v4 Turbo hiểu tag.** Model cũ (`eleven_multilingual_v2`,
+    `eleven_turbo_v2_5`, `eleven_flash_v2_5`) đọc to tag → `synthesize()` tự
+    gỡ tag khi model không phải v4 (`go_tag`).
+  - GUI: ô "Hiệu ứng" + nút "Chèn vào câu đang chọn" + nút "Tự chèn gợi ý"
+    (chèn tag theo từ khoá trong câu; câu tin tức bình thường không gắn tag).
   Giá API: v4 $0.08/1.000 ký tự, v4 Turbo $0.04.
 - Tab "Tin nóng 24h": chấm điểm độ nóng tin + Google News
 - Tự cập nhật qua GitHub (nút ⬆ Cập nhật trong tool)
