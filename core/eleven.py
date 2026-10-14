@@ -265,6 +265,139 @@ VOICE_SETTINGS = {
 }
 
 
+# ── audio tag (chỉ Eleven v4 hiểu) ────────────────────────────────────
+# ĐO THẬT 14/10/2026 bằng key hiện có, giọng Brian, model eleven_v4:
+#  · Tag PHẢI bọc trong ngoặc vuông: "[whispers] ..." -> ăn.
+#    Viết trần không ngoặc ("whispers ...") -> bị ĐỌC TO ra tiếng. TUYỆT ĐỐI
+#    không để chữ trần kiểu này trong text.
+#  · Tag KHÔNG bị đọc to (ASR đọc lại sạch, không thấy chữ "whispers").
+#  · Tag chỉ áp cho CÂU theo sau nó, không áp cả file: đo nửa đầu/nửa cuối
+#    thấy [whispers] ở đầu -> nửa đầu -25.4 dB, nửa sau -22.8 dB;
+#    đặt giữa -> nửa đầu -22.9 dB, nửa sau -27.6 dB. Đúng ngữ cảnh.
+#  · Đo biên độ (cùng 1 câu): [shouting] +1.8 dB, [whispers] -2.7 dB so với
+#    không tag -> có đổi cách đọc thật, nhưng KHÁC BIỆT NHỎ (~3 dB). Muốn
+#    nhấn mạnh rõ thì thêm ngoặc + để nguyên text tự nhiên, đừng trông cậy
+#    tag làm to/nhỏ hẳn.
+#  · [pause] / [long pause] chỉ dài thêm 0.16s -> gần như vô dụng; muốn
+#    ngắt nghỉ thật thì dùng dấu câu (… , .) hoặc tách câu.
+#  · Đã thử 15 tag đều tạo file OK; [sighs]/[laughs]/[breathing]/[clears
+#    throat] làm file dài hơn (có chèn tiếng động thật).
+#  · CHỈ v4 / v4 Turbo hiểu tag. Model cũ (multilingual_v2, turbo_v2_5,
+#    flash_v2_5) sẽ ĐỌC TO tag ra tiếng -> xem co_tag() để tự gỡ.
+AUDIO_TAGS = [
+    ("[whispers]",  "thì thầm (nhỏ hơn ~3 dB)"),
+    ("[shouts]",    "hét/to hơn (~2 dB)"),
+    ("[sighs]",     "thở dài (chèn tiếng thật)"),
+    ("[laughs]",    "cười (chèn tiếng thật)"),
+    ("[excited]",   "hào hứng"),
+    ("[sad]",       "buồn"),
+    ("[serious]",   "nghiêm trọng"),
+    ("[emphasize]", "nhấn mạnh"),
+    ("[nervous]",   "lo lắng"),
+    ("[surprised]", "ngạc nhiên"),
+    ("[curious]",   "tò mò"),
+    ("[clears throat]", "hắng giọng (chèn tiếng thật)"),
+    ("[breathing]", "tiếng thở (chèn tiếng thật)"),
+]
+
+# model nào hiểu audio tag (đo thật: v4 ăn, các model cũ đọc to tag)
+TAG_MODELS = ("eleven_v4", "eleven_v4_turbo")
+
+RE_TAG = re.compile(r"\[[^\[\]]{1,40}\]")
+
+
+def ho_tro_tag(model_id: str) -> bool:
+    """Model này có hiểu audio tag không (chỉ v4 / v4 Turbo)."""
+    return (model_id or "").strip() in TAG_MODELS
+
+
+def co_tag(text: str) -> list:
+    """Danh sách audio tag đang có trong text."""
+    return RE_TAG.findall(text or "")
+
+
+def go_tag(text: str) -> str:
+    """Gỡ hết audio tag + dọn khoảng trắng thừa.
+
+    Dùng khi model KHÔNG phải v4: để nguyên tag thì model cũ sẽ đọc to
+    "[whispers]" ra tiếng -> hỏng audio.
+    """
+    s = RE_TAG.sub(" ", text or "")
+    s = re.sub(r"[ \t]{2,}", " ", s)
+    s = re.sub(r"\s+([,.;:!?])", r"\1", s)
+    return s.strip()
+
+
+def chuan_hoa_tag(text: str) -> str:
+    """Chuẩn hoá tag về đúng dạng ngoặc vuông, viết thường.
+
+    Ca thật: người dùng gõ trần "whispers ..." -> v4 đọc to chữ đó ra.
+    """
+    if not text:
+        return text
+    out = text
+    for ten, _ in AUDIO_TAGS:
+        tran = ten[1:-1]
+        out = re.sub(r"(?<!\[)\b" + re.escape(tran) + r"\b(?!\])",
+                     ten, out, flags=re.IGNORECASE)
+    return out
+
+
+def tag_tran(text: str) -> list:
+    """Tìm tag viết TRẦN (không ngoặc vuông) — dạng này v4 ĐỌC TO ra tiếng."""
+    if not text:
+        return []
+    low = (text or "").lower()
+    hit = []
+    for ten, _ in AUDIO_TAGS:
+        tran = ten[1:-1].lower()
+        if re.search(r"(?<!\[)\b" + re.escape(tran) + r"\b(?!\])", low):
+            hit.append(ten)
+    return hit
+
+
+# từ khoá -> tag, dùng cho nút "Tự chèn gợi ý". CHỈ áp khi câu có tín hiệu
+# rõ ràng; câu tin tức bình thường thì KHÔNG gắn tag (tránh diễn lố).
+TAG_TU_KHOA = [
+    (r"\b(secret|quietly|whisper|confess|barely audible|under (his|her) breath)\b",
+     "[whispers]"),
+    (r"\b(shock|outrage|explode|scream|yell|roar|blast)\w*\b", "[shouts]"),
+    (r"\b(tragic|grief|mourn|devastat|heartbreak|loss)\w*\b",  "[sad]"),
+    (r"\b(breaking|urgent|warning|emergency|critical)\b",      "[serious]"),
+    (r"\b(surpris|stun|shock|unbelievab)\w*\b",                "[surprised]"),
+    (r"\b(celebrat|victor|triumph|win|relief)\w*\b",           "[excited]"),
+]
+
+
+def tu_dong_tag(text: str) -> tuple:
+    """Chèn tag theo từ khoá vào đầu từng CÂU. Trả (text_mới, số_tag_đã_chèn).
+
+    Mỗi câu tối đa 1 tag, ưu tiên từ khoá xuất hiện trước. Câu đã có tag
+    thì bỏ qua. Chỉ nên dùng khi model là v4 (model cũ sẽ đọc to tag).
+    """
+    if not text:
+        return text, 0
+    added = 0
+    out_lines = []
+    for line in (text or "").split("\n"):
+        s = line.strip()
+        if not s or RE_TAG.search(s):
+            out_lines.append(line)
+            continue
+        low = s.lower()
+        pick = None
+        for pat, tag in TAG_TU_KHOA:
+            if re.search(pat, low):
+                pick = tag
+                break
+        if pick:
+            out_lines.append(pick + " " + s)
+            added += 1
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines), added
+
+
 # ── API key ───────────────────────────────────────────────────────────
 def load_key() -> str:
     """Đọc key từ env hoặc file .env của Hermes."""
@@ -364,6 +497,13 @@ def synthesize(key: str, voice_id: str, model_id: str, text: str,
         raise RuntimeError("chưa nhập nội dung đọc")
     if not key:
         raise RuntimeError("chưa có API key ElevenLabs")
+    mid = (model_id or DEFAULT_MODEL).strip()
+    # audio tag: v4/v4_turbo hiểu -> giữ + chuẩn hoá về ngoặc vuông.
+    # Model cũ đọc to tag ra tiếng -> gỡ sạch trước khi gửi.
+    if ho_tro_tag(mid):
+        text = chuan_hoa_tag(text)
+    else:
+        text = go_tag(text)
     out_path = Path(out_path)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     st = dict(VOICE_SETTINGS)

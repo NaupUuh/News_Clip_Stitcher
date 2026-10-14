@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.26.0"
+APP_VERSION = "1.27.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -522,7 +522,8 @@ class App:
                                          width=22, state="readonly",
                                          values=[m[0] for m in eleven.MODELS])
         self.tts_model_cb.pack(side="left")
-        self.tts_model_cb.bind("<<ComboboxSelected>>", lambda e: self._tts_model_info())
+        self.tts_model_cb.bind("<<ComboboxSelected>>",
+                               lambda e: (self._tts_model_info(), self._tts_tag_check()))
         self.tts_model_note = tk.StringVar(value="")
         ttk.Label(f, textvariable=self.tts_model_note,
                   foreground="#0a6").pack(side="left", padx=(6, 0))
@@ -539,7 +540,29 @@ class App:
         if self.cfg.get("tts_text"):
             self.tts_text.insert("1.0", str(self.cfg.get("tts_text")))
 
-        self.tts_text.bind("<KeyRelease>", lambda e: self._tts_len_hint())
+        self.tts_text.bind("<KeyRelease>",
+                           lambda e: (self._tts_len_hint(), self._tts_tag_check()))
+
+        # ── audio tag của Eleven v4 ──────────────────────────────────
+        # ĐO THẬT: v4 hiểu tag trong ngoặc vuông ([whispers], [shouts]…),
+        # tag chỉ áp cho CÂU theo sau nó. Model cũ đọc to tag ra tiếng nên
+        # _tts_generate tự gỡ khi model không phải v4.
+        f = ttk.Frame(g); f.pack(fill="x", pady=2)
+        ttk.Label(f, text="Hiệu ứng:", width=9).pack(side="left")
+        ttk.Label(f, text="(chỉ Eleven v4 hiểu — tag áp cho câu ngay sau nó)",
+                  foreground="#666").pack(side="left", padx=(0, 6))
+        self.tts_tag_var = tk.StringVar(value="")
+        _tag_cb = ttk.Combobox(f, textvariable=self.tts_tag_var, width=32,
+                               state="readonly",
+                               values=[f"{t}  —  {m}" for t, m in eleven.AUDIO_TAGS])
+        _tag_cb.pack(side="left")
+        ttk.Button(f, text="Chèn vào câu đang chọn", width=21,
+                   command=lambda: self._tts_insert_tag(_tag_cb.current())).pack(side="left", padx=4)
+        ttk.Button(f, text="Tự chèn gợi ý", width=15,
+                   command=self._tts_auto_tag).pack(side="left", padx=2)
+        self.tts_tag_note = tk.StringVar(value="")
+        ttk.Label(g, textvariable=self.tts_tag_note, foreground="#c60",
+                  wraplength=900, justify="left").pack(anchor="w")
 
         # Thời gian đọc — video 15s thì audio cũng phải ~15s mới khớp.
         # ElevenLabs không nhận "độ dài", nó đọc hết text -> phải ép về số
@@ -604,6 +627,7 @@ class App:
         self._tts_voice_info()
         self._tts_model_info()
         self._tts_len_hint()
+        self._tts_tag_check()
 
         # 4. Xuất
         g = ttk.LabelFrame(body, text="5. Nơi lưu", padding=6)
@@ -1669,7 +1693,65 @@ class App:
             note = "chất lượng cao, có đủ stability + similarity + style + speed"
         else:
             note = "bản nhanh — tốn nửa credit so với v4/v2"
+        if not eleven.ho_tro_tag(mid):
+            note += ("  ·  model này KHÔNG hiểu audio tag → tag trong ô Nội dung "
+                     "sẽ bị ĐỌC TO ra tiếng, tool tự gỡ khi tạo")
         self.tts_model_note.set("→ " + note)
+
+    def _tts_insert_tag(self, idx: int):
+        """Chèn audio tag vào đầu CÂU đang chọn (tag áp cho câu theo sau nó)."""
+        if idx is None or idx < 0 or idx >= len(eleven.AUDIO_TAGS):
+            self.tts_tag_note.set("⚠ chọn 1 hiệu ứng ở ô bên trái trước.")
+            return
+        tag = eleven.AUDIO_TAGS[idx][0]
+        try:
+            a = self.tts_text.index("sel.first")
+        except Exception:
+            a = self.tts_text.index("insert")
+        # lùi về đầu dòng chứa vị trí chèn (mỗi câu thường 1 dòng)
+        line = int(str(a).split(".")[0])
+        self.tts_text.insert(f"{line}.0", tag + " ")
+        self._tts_tag_check()
+        self.log(f"🏷 chèn {tag} vào đầu dòng {line}")
+
+    def _tts_auto_tag(self):
+        """Tự chèn tag theo từ khoá trong từng câu (chỉ khi model là v4)."""
+        mid = (self.tts_model_var.get() or "").strip()
+        if not eleven.ho_tro_tag(mid):
+            self.tts_tag_note.set("⚠ model đang chọn KHÔNG hiểu audio tag "
+                                  "(chỉ Eleven v4 / v4 Turbo). Đổi model trước.")
+            return
+        txt = self._tts_text_value()
+        if not txt:
+            self.tts_tag_note.set("⚠ ô Nội dung đang trống.")
+            return
+        new, added = eleven.tu_dong_tag(txt)
+        self.tts_text.delete("1.0", "end")
+        self.tts_text.insert("1.0", new)
+        self._tts_tag_check()
+        self._tts_len_hint()
+        self.tts_tag_note.set(f"✔ đã tự chèn {added} tag theo từ khoá trong câu."
+                              if added else "• không thấy câu nào cần tag.")
+        self.log(f"🏷 tự chèn {added} audio tag")
+
+    def _tts_tag_check(self):
+        """Cảnh báo tag viết trần (bị đọc to) hoặc model không hiểu tag."""
+        mid = (self.tts_model_var.get() or "").strip()
+        txt = self._tts_text_value()
+        tags = eleven.co_tag(txt)
+        tran = eleven.tag_tran(txt)
+        if tran and eleven.ho_tro_tag(mid):
+            self.tts_tag_note.set(
+                f"⚠ thấy chữ trần: {', '.join(tran[:4])} — viết thế này v4 ĐỌC TO "
+                f"ra tiếng. Bấm \"Tự chèn gợi ý\" hoặc bọc thành [ngoặc vuông].")
+        elif tags and not eleven.ho_tro_tag(mid):
+            self.tts_tag_note.set(
+                f"⚠ đang có {len(tags)} tag nhưng model {mid} không hiểu → tool sẽ "
+                f"tự gỡ khi tạo. Đổi sang Eleven v4 để dùng hiệu ứng.")
+        elif tags:
+            self.tts_tag_note.set(f"✔ {len(tags)} audio tag — v4 sẽ đọc theo tag.")
+        else:
+            self.tts_tag_note.set("")
 
     def _tts_key(self) -> str:
         return (self.tts_key_var.get() or "").strip() or eleven.load_key()

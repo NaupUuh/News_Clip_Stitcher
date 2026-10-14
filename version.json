@@ -1,5 +1,5 @@
 {
-  "version": "1.26.0",
-  "notes": "Them Eleven v4 + v4 Turbo vao danh sach model TTS, mac dinh dung v4 (v4 chi dung stability+similarity, dieu khien bang audio tag trong text)",
+  "version": "1.27.0",
+  "notes": "Them bo audio tag Eleven v4: nut chon hieu ung + tu chen tag theo tu khoa, tu go tag khi model khong phai v4, canh bao tag viet tran",
   "date": "2026-10-14"
 }
