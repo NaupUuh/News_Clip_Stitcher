@@ -38,6 +38,21 @@ class StitchError(Exception):
     pass
 
 
+# ── tương thích Python ────────────────────────────────────────────────
+# int.bit_count() chỉ có từ Python 3.10. Máy cài Python 3.9 sẽ chết ngay
+# khi KIỂM TRA POOL / render với lỗi:
+#     AttributeError: 'int' object has no attribute 'bit_count'
+# Dùng bản thay thế chạy được trên MỌI Python (3.6+) để tool không phụ
+# thuộc vào bản Python cài trên máy. bin().count("1") chậm hơn không đáng
+# kể ở đây (mỗi lần chỉ đếm 1 số nguyên nhỏ).
+if hasattr(int, "bit_count"):
+    def _popcount(x):
+        return x.bit_count()
+else:
+    def _popcount(x):
+        return bin(x).count("1")
+
+
 # Số lần thử lại khi bốc 1 tập media (rejection sampling). Bốc cả tập nên xác
 # suất trúng rất cao; 60 lần là quá đủ kể cả khi pool gần cạn.
 _TRIES = 60
@@ -243,7 +258,7 @@ def pick_items_excluding(imgs, vids, n_min, n_max, use_all, rng,
         """Chung với MỌI video trước <= floor(50% số ảnh của cặp) hay không."""
         for pm, pc in prev_masks:
             lim = int(math.floor(min(cnt, pc) * ovl))
-            if (mask & pm).bit_count() > lim:
+            if _popcount(mask & pm) > lim:
                 return False
         return True
 
@@ -339,7 +354,7 @@ def pick_items_excluding(imgs, vids, n_min, n_max, use_all, rng,
         bad = 0
         for pm, pc in prev_masks:
             lim = int(math.floor(min(len(got_i), pc) * ovl))
-            bad += max(0, (m & pm).bit_count() - lim)
+            bad += max(0, _popcount(m & pm) - lim)
         if best is None or bad < best_bad:
             best, best_bad = got_i + draw_vid(want_vid), bad
             if bad == 0:
@@ -393,7 +408,7 @@ def pick_scene_items(imgs, vids, n_vid, n_img, rng, cutpool,
     def overlap_ok(mask, cnt):
         for pm, pc in prev_masks:
             lim = int(math.floor(min(cnt, pc) * ovl))
-            if (mask & pm).bit_count() > lim:
+            if _popcount(mask & pm) > lim:
                 return False
         return True
 
@@ -437,7 +452,7 @@ def pick_scene_items(imgs, vids, n_vid, n_img, rng, cutpool,
                 bad = 0
                 for pm, pc in prev_masks:
                     lim = int(math.floor(min(len(gi), pc) * ovl))
-                    bad += max(0, (m & pm).bit_count() - lim)
+                    bad += max(0, _popcount(m & pm) - lim)
                 if best is None or bad < best_bad:
                     best, best_bad = gi, bad
                     if bad == 0:

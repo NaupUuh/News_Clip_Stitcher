@@ -1,5 +1,5 @@
 {
-  "version": "1.27.0",
-  "notes": "Them bo audio tag Eleven v4: nut chon hieu ung + tu chen tag theo tu khoa, tu go tag khi model khong phai v4, canh bao tag viet tran",
+  "version": "1.27.1",
+  "notes": "Sua loi 'int' object has no attribute 'bit_count' tren may cai Python 3.9: thay bit_count() bang ham _popcount chay duoc moi Python, va run.bat tu do Python >=3.10 (py launcher truoc) thay vi roi xuong 3.9 trong PATH",
   "date": "2026-10-14"
 }
