@@ -50,6 +50,21 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   `core/stitcher.py`. **Bản có mục 7 vẫn giữ ở nhánh GitHub
   `backup/muc7-anh-dung-tin`** — cần lại thì `git checkout` từ đó.
 
+## BẢO MẬT — key ElevenLabs từng bị lộ lên GitHub (14/10/2026)
+
+- File `config.json.bak_tts` **đã bị git theo dõi** và chứa **API key ElevenLabs
+  thật**, nằm trên repo **PUBLIC** từ commit `2dd5b4e` (04/10/2026) → lộ 10 ngày.
+- **Nguyên nhân**: `.gitignore` có dòng `config.json.bak_*` NHƯNG file đã bị track
+  từ trước — **`.gitignore` KHÔNG có tác dụng với file đã được theo dõi**.
+- **Đã xử lý**: `git rm --cached config.json.bak_tts` + xoá file khỏi đĩa + commit
+  `e0e71e5` + push. Đã xác minh HEAD trên GitHub không còn file, các file đang
+  track không còn secret nào. Đã quét lịch sử cả 4 repo (`News_Clip_Stitcher`,
+  `Phong_ADung`, `Phong_DHue`, `Vizard_Auto_Clip`) — chỉ repo này dính.
+- **CÒN LẠI**: blob cũ vẫn nằm trong lịch sử git của repo public (dù không còn
+  trong HEAD). Vì repo **public**, GitHub có thể vẫn phục vụ blob theo SHA.
+  **Anh nên thu hồi (revoke) key ElevenLabs đó trên dashboard và tạo key mới** —
+  key này trùng với key đang dùng trong `.env` và `config.json`.
+
 ## Việc CÒN LẠI / chờ anh quyết
 
 1. **Chọn MC**: hiện anh tự chọn file MC mỗi lần chạy (cố ý, không lưu config).
