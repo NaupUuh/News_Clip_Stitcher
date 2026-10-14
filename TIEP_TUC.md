@@ -32,6 +32,13 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   trái-dưới, **lề trái SET CỨNG = mép thanh đỏ BREAKING** (lệch 1px)
 - Audio ElevenLabs: ô "thời gian đọc" (mặc định 15s) + tự ép audio khớp đúng
   số giây đó; tốc độ đọc 15.6 ký tự/giây (đo thật 4 giọng)
+- **Eleven v4** (14/10/2026): danh sách model có `eleven_v4` + `eleven_v4_turbo`,
+  mặc định dùng `eleven_v4`. v4 CHẠY ĐƯỢC với key hiện có (không cần nâng gói).
+  v4 chỉ dùng `stability` + `similarity`; KHÔNG có `style`/`speed`, không hỗ trợ
+  SSML — nhưng API vẫn nhận `style`/`speed` cũ mà không báo lỗi (bỏ qua im lặng),
+  nên `VOICE_SETTINGS` không phải sửa. Điều khiển cách đọc bằng AUDIO TAG đặt
+  trong chính câu text: `[whispering]` `[shouting]` `[laughing]` `[sighs]`.
+  Giá API: v4 $0.08/1.000 ký tự, v4 Turbo $0.04.
 - Tab "Tin nóng 24h": chấm điểm độ nóng tin + Google News
 - Tự cập nhật qua GitHub (nút ⬆ Cập nhật trong tool)
 
