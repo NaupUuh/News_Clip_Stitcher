@@ -1,6 +1,6 @@
 # TIẾP TỤC TOOL NÀY — đọc file này trước
 
-Cập nhật: 2026-10-14 · Phiên bản hiện tại: **v1.27.0**
+Cập nhật: 2026-10-14 · Phiên bản hiện tại: **v1.27.1**
 
 ## Cách tiếp tục (1 câu cho trợ lý)
 
@@ -67,6 +67,30 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   còn RSS báo trực tiếp trong `core/news.py`, không còn chế độ `fit` trong
   `core/stitcher.py`. **Bản có mục 7 vẫn giữ ở nhánh GitHub
   `backup/muc7-anh-dung-tin`** — cần lại thì `git checkout` từ đó.
+
+## LỖI ĐÃ SỬA — `'int' object has no attribute 'bit_count'` (14/10/2026, v1.27.1)
+
+- **Triệu chứng**: máy cài Python 3.9 bấm "KIỂM TRA POOL" hoặc chạy tạo video →
+  `❌ Lỗi kiểm tra: 'int' object has no attribute 'bit_count'` và
+  `❌ Lỗi: 'int' object has no attribute 'bit_count'`, 0 video thành công.
+- **Nguyên nhân đã xác minh**: `core/stitcher.py` dùng `int.bit_count()` — hàm này
+  **chỉ có từ Python 3.10**. Máy kia cài **Python 3.9.9**.
+- **Vì sao chọn nhầm Python**: `run.bat` chỉ dò **2 đường dẫn CỐ ĐỊNH của máy build**
+  (`C:\ReverseEngineering\Scripts\venv\...`, `Python313\python.exe`). Máy khác không
+  có 2 đường dẫn đó → rơi xuống `python` trong PATH → trúng Python 3.9.
+- **Cách sửa** (2 lớp):
+  1. `core/stitcher.py`: thay `(a & b).bit_count()` bằng hàm `_popcount()` — có
+     `bit_count()` thì dùng, không có thì `bin(x).count("1")` (chạy mọi Python 3.6+).
+     Tổng 4 chỗ thay.
+  2. `run.bat`: dò Python theo thứ tự `py -3.14 … -3.10` (py launcher) → các đường
+     dẫn phổ biến → PATH. Thêm cảnh báo ghi vào log nếu Python < 3.10.
+- **Cách kiểm tra**: `py -0p` (liệt kê Python đã cài) và
+  `python -c "import sys;print(sys.version.split()[0],hasattr(0,'bit_count'))"`.
+  Đã test thật: chạy `pool_report` + `plan_sequence` 50 video + render 2 video
+  trên Python 3.9.0 → PASS, không còn lỗi; trùng ảnh đúng ≤50%.
+- **Điều cần tránh**: đừng viết API chỉ có ở Python mới (`bit_count`, `zip(strict=)`,
+  `itertools.pairwise`, `tomllib`, `X | Y` không có `from __future__`); đừng để
+  `.bat` chỉ trỏ đường dẫn cố định của một máy.
 
 ## BẢO MẬT — key ElevenLabs từng bị lộ lên GitHub (14/10/2026)
 
