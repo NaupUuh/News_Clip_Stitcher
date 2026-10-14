@@ -100,12 +100,25 @@ def voice_label(v) -> str:
     return f"{name} · {g} · {kieu}{flag}"
 
 MODELS = [
+    ("eleven_v4",              "★ Eleven v4 — MỚI NHẤT, chất lượng cao nhất (1 credit/ký tự)", 1.0),
+    ("eleven_v4_turbo",        "★ Eleven v4 Turbo — gần bằng v4, độ trễ thấp (1 credit/ký tự)", 1.0),
     ("eleven_multilingual_v2", "Multilingual v2 — chất lượng cao (1 credit/ký tự)", 1.0),
     ("eleven_turbo_v2_5",      "Turbo v2.5 — nhanh (0.5 credit/ký tự)",            0.5),
     ("eleven_flash_v2_5",      "Flash v2.5 — nhanh nhất (0.5 credit/ký tự)",       0.5),
 ]
 
-DEFAULT_MODEL = "eleven_multilingual_v2"
+DEFAULT_MODEL = "eleven_v4"
+
+# GHI CHÚ Eleven v4 (kiểm chứng 14/10/2026 bằng key hiện có):
+#  - v4 và v4 Turbo CHẠY ĐƯỢC với key hiện tại, KHÔNG cần nâng gói.
+#  - v4 chỉ dùng 2 tham số: stability + similarity. KHÔNG có style / speed,
+#    không hỗ trợ SSML. API VẪN NHẬN style/speed/use_speaker_boost mà không
+#    báo lỗi — nó bỏ qua im lặng (đã test: gửi kèm vẫn trả audio bình thường),
+#    nên VOICE_SETTINGS cũ dùng cho v4 không cần sửa.
+#  - Thay vào đó v4 hiểu AUDIO TAG đặt trong chính câu text, ví dụ:
+#    [whispering] [shouting] [laughing] [sighs] — dùng để điều khiển cách đọc.
+#  - Giá API: v4 $0.08 / 1.000 ký tự, v4 Turbo $0.04 (bảng giá 10/2026);
+#    gói thuê bao tính theo credit như cũ.
 
 # ── thời gian đọc ─────────────────────────────────────────────────────
 # Video tin tức dài 15s -> audio cũng phải ~15s thì khớp. ElevenLabs KHÔNG

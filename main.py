@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.25.1"
+APP_VERSION = "1.26.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -133,7 +133,7 @@ DEFAULTS = {
     "audio_dir": "",
     "tts_key": "",
     "tts_voice": "Brian",
-    "tts_model": "eleven_multilingual_v2",
+    "tts_model": "eleven_v4",
     "tts_text": "",
     "tts_dir": "",
     "tts_dir_in": "",
@@ -518,8 +518,14 @@ class App:
         ttk.Label(f, text="Model:").pack(side="left", padx=(10, 2))
         self.tts_model_var = tk.StringVar(value=self.cfg.get("tts_model", eleven.DEFAULT_MODEL))
         self.vars["tts_model"] = self.tts_model_var
-        ttk.Combobox(f, textvariable=self.tts_model_var, width=22, state="readonly",
-                     values=[m[0] for m in eleven.MODELS]).pack(side="left")
+        self.tts_model_cb = ttk.Combobox(f, textvariable=self.tts_model_var,
+                                         width=22, state="readonly",
+                                         values=[m[0] for m in eleven.MODELS])
+        self.tts_model_cb.pack(side="left")
+        self.tts_model_cb.bind("<<ComboboxSelected>>", lambda e: self._tts_model_info())
+        self.tts_model_note = tk.StringVar(value="")
+        ttk.Label(f, textvariable=self.tts_model_note,
+                  foreground="#0a6").pack(side="left", padx=(6, 0))
         # ghi rõ giọng này giống kiểu nhà đài nào
         self.tts_voice_note = tk.StringVar(value="")
         ttk.Label(g, textvariable=self.tts_voice_note, foreground="#0a6",
@@ -596,6 +602,7 @@ class App:
                           "\"folder audio\" ở mục 3.",
                   foreground="#666", wraplength=900, justify="left").pack(anchor="w")
         self._tts_voice_info()
+        self._tts_model_info()
         self._tts_len_hint()
 
         # 4. Xuất
@@ -1650,6 +1657,19 @@ class App:
         tier = "dùng được với gói free" if v[5] == "free" else "CẦN GÓI TRẢ PHÍ"
         self.tts_voice_note.set(
             f"→ {v[0]} ({v[1]}): kiểu {v[3]} — {v[4]}  ·  {tier}")
+
+    def _tts_model_info(self):
+        """Ghi rõ model TTS đang chọn khác gì nhau."""
+        mid = (self.tts_model_var.get() or "").strip()
+        if mid.startswith("eleven_v4"):
+            note = ("v4 MỚI NHẤT — chỉ dùng stability + similarity, KHÔNG có "
+                    "style/speed; điều khiển cách đọc bằng audio tag trong câu "
+                    "text, ví dụ [whispering] [shouting] [laughing]")
+        elif mid == "eleven_multilingual_v2":
+            note = "chất lượng cao, có đủ stability + similarity + style + speed"
+        else:
+            note = "bản nhanh — tốn nửa credit so với v4/v2"
+        self.tts_model_note.set("→ " + note)
 
     def _tts_key(self) -> str:
         return (self.tts_key_var.get() or "").strip() or eleven.load_key()
