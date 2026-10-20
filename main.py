@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.27.1"
+APP_VERSION = "1.27.2"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -1673,6 +1673,11 @@ class App:
         for v in eleven.VOICES:
             if eleven.voice_label(v) == want or v[0] == want:
                 return v
+        # Nhãn cũ không còn trong danh sách (đổi tên/đổi voice_id) — báo rõ, đừng im lặng
+        if not getattr(self, "_da_bao_giong", False):
+            self._da_bao_giong = True
+            print(f"[cảnh báo] giọng '{want}' không còn trong danh sách "
+                  f"→ dùng tạm {eleven.VOICES[0][0]}. Chọn lại giọng trong ô Giọng đọc.")
         return eleven.VOICES[0]
 
     def _tts_voice_info(self):

@@ -28,6 +28,12 @@ API_BASE = "https://api.elevenlabs.io"
 # — không phải bản sao giọng MC thật của đài.
 #
 # (tên, giới tính, voice_id, kiểu nhà đài, mô tả chất giọng, tier)
+# ⚠ voice_id kiểu CŨ (v1 legacy) giờ bị ElevenLabs gộp về cùng 1 giọng:
+#   yoZ06aMxZJJ28mfd3POQ (Sam) == oWAxZDx7w5VEj9dCyTzz (Grace)
+#   pNInz6obpgDQGcFmaJgB (Adam) == ErXwobaYiN019PkySvjV (Antoni) == VR6AewLTigWG4xSOukaG (Arnold)
+#   21m00Tcm4TlvDq8ikWAM (Rachel) == z9fAnlkpzviPz146aGWa (Nicole)
+#   jBpfuIE2acCO8z3wKNLl (Gigi) == LcfcDJNUP1GQjkzn1xUU (Emily) == jsCqWAovK2LkecY7zXl4 (Freya)
+# → đã thay bằng ID thư viện mới, mỗi giọng 1 chất giọng riêng (đo bằng ECAPA, cos < 0.6).
 VOICES = [
     # ★★ NAM — MC tin tức
     ("Brian",   "nam", "nPczCjzI2devNBz1zQrb", "CNN / NBC Nightly",
@@ -42,12 +48,10 @@ VOICES = [
      "Căng, gắt, nhấn mạnh — kiểu bản tin giờ vàng Fox", "free"),
     ("Liam",    "nam", "TX3LPaxmHKxFdv7VOQHJ", "Sky News",
      "Rõ chữ, dứt khoát, tiết tấu nhanh — kiểu tin liên tục", "free"),
-    ("Arnold",  "nam", "VR6AewLTigWG4xSOukaG", "Bloomberg TV",
-     "Crisp, dứt khoát — kiểu MC bản tin tài chính", "free"),
     ("Charlie", "nam", "IKne3meq5aSn9XLyUdCD", "CNN Digital",
      "Tự nhiên, đời thường — kiểu dẫn tin online", "free"),
-    ("Antoni",  "nam", "ErXwobaYiN019PkySvjV", "MSNBC",
-     "Tròn trịa, cân bằng — kiểu dẫn tin chính luận", "free"),
+    ("Bill",    "nam", "pqHfZKP75CvOlQylNhV4", "ABC World News Tonight",
+     "Chững chạc, dày — kiểu MC bản tin tối Mỹ", "free"),
     ("Eric",    "nam", "cjVigY5qzO86Huf0OWal", "CNBC",
      "Mượt, lịch sự — kiểu MC tin kinh tế", "free"),
     ("Chris",   "nam", "iP95p4xoKVk53GoZ742B", "ABC News",
@@ -86,10 +90,10 @@ VOICES = [
      "Biểu cảm, dồn dập — kiểu đưa tin nóng", "paid"),
     ("Freya",   "nu",  "jsCqWAovK2LkecY7zXl4", "Sky News",
      "Biểu cảm — kiểu phóng viên hiện trường", "paid"),
-    ("Grace",   "nu",  "oWAxZDx7w5VEj9dCyTzz", "ABC News (US South)",
-     "Miền Nam US — kiểu phóng viên địa phương", "paid"),
-    ("Nicole",  "nu",  "z9fAnlkpzviPz146aGWa", "podcast news",
-     "Thì thầm — kiểu kể tin podcast", "paid"),
+    ("Aria",    "nu",  "9BWtsMINqrJLrRacOk9x", "ABC News (US)",
+     "Trẻ, biểu cảm — kiểu phóng viên hiện trường Mỹ", "free"),
+    ("Mimi",    "nu",  "zrHiDhphv9ZnVXBqCLjz", "podcast news",
+     "Nhẹ, gần gũi — kiểu kể tin podcast", "free"),
 ]
 
 
