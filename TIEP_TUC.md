@@ -1,6 +1,6 @@
 # TIẾP TỤC TOOL NÀY — đọc file này trước
 
-Cập nhật: 2026-10-14 · Phiên bản hiện tại: **v1.27.1**
+Cập nhật: 2026-10-22 · Phiên bản hiện tại: **v1.28.0**
 
 ## Cách tiếp tục (1 câu cho trợ lý)
 
@@ -59,6 +59,49 @@ kinh nghiệm về tool: khung MC, banner, cắt clip, cập nhật GitHub, sync
   Giá API: v4 $0.08/1.000 ký tự, v4 Turbo $0.04.
 - Tab "Tin nóng 24h": chấm điểm độ nóng tin + Google News
 - Tự cập nhật qua GitHub (nút ⬆ Cập nhật trong tool)
+
+## MỚI — CẢNH ĐẦU (tuỳ chọn) ở Tab 1 (22/10/2026, v1.28.0)
+
+- **Yêu cầu**: Tab 1 có thêm 1 mục chọn **folder** chứa ảnh hoặc video ngắn 3-4s.
+  Mỗi video con sẽ **nhặt ngẫu nhiên 1 file** trong folder đó ghép làm **cảnh đầu**.
+  Tích thì mới thêm; **không tích → chạy y hệt như cũ**, không thêm gì.
+- **UI** (`main.py`, khối `1b. Cảnh đầu (tuỳ chọn)` ngay dưới mục 1):
+  - `Checkbutton` "Thêm cảnh đầu cho mỗi video" (`intro_var`)
+  - `Spinbox` độ dài 0.5–8s, mặc định **3.0** (`intro_sec_var`)
+  - `Entry` + nút **Chọn** folder cảnh đầu (`intro_dir_var`), nút ✕ xoá nhanh
+  - Dòng ghi chú tự cập nhật: đếm `N ảnh + M video` trong folder
+- **Lưu ý**: 3 khoá này nằm trong `DEFAULTS` của `main.py` (`intro_on`, `intro_dir`,
+  `intro_sec`) → tự lưu/đọc qua `config.json` như mọi thông số khác.
+- **Engine** (`core/stitcher.py`):
+  - `plan_folder()`: sau khi có `total_frames`, gọi `_intro_scene()`; cảnh đầu ăn
+    vào **`body_frames = total_frames - intro_fr`** → **tổng thời lượng KHÔNG đổi**,
+    audio ép đúng `total` giây vẫn khớp. `scenes.insert(0, intro_sc)`.
+  - `_intro_scene(folder, rng, fps, total_frames)`: quét ảnh + video (dùng
+    `list_media`), `random.choice` **1 file**, trả `(scene, frames)`.
+    - Ảnh → scene `kind="image"` có Ken Burns + grade như cảnh thường.
+    - Video → lấy **đoạn ĐẦU** (`start=0`, tự bỏ đoạn đen đầu nếu có), cắt đúng
+      `intro_sec` giây; nếu file ngắn hơn thì lấy hết file.
+    - Trần cứng: cảnh đầu ≤ **40%** tổng thời lượng.
+    - Folder trống / không tồn tại / chưa chọn → trả `(None, 0)`, **chạy như cũ,
+      không crash**.
+  - Scene intro có cờ `"intro": True` để log và để `pool_report` bỏ qua (hàm
+    `scan()` trong `pool_report` ép `intro_on=False` — cảnh đầu không lấy media
+    từ pool nên không ảnh hưởng con số "số video tối đa").
+  - `_intro_scene()` dùng **RNG riêng** (`random.Random()`) → bật/tắt cảnh đầu
+    không làm thay đổi cách chọn cảnh của phần thân.
+- **Đã kiểm chứng** (`$TEMP/test_intro.py`, `test_intro_full.py`):
+  - Pool đủ (video nguồn 60s): TẮT = 450 frame/15.00s, BẬT = 450 frame/15.00s,
+    cảnh đầu 3.00s, body 12.00s, render ra đúng **15.000s**.
+  - 6 lần lập kế hoạch → cảnh đầu ra 3 tên file khác nhau (đúng random).
+  - `intro_sec=2.0` → cảnh đầu 2.00s, tổng vẫn 15.00s.
+  - Folder rỗng / không tồn tại → plan y như bản tắt, không crash.
+  - Folder chỉ có video → scene đầu `kind=video`, 3.00s.
+  - `intro_sec=6` nhưng file intro 3.5s → cắt còn 3.50s (không lỗi).
+  - GUI smoke: bật/tắt, ghi chú, `_build_cfg()` trả đúng kiểu `bool`/`float`.
+- **Bẫy đã gặp**: `_fit_to_media()` chỉ bù giây cho cảnh **khác** khi video nguồn
+  ngắn hơn slot. Nếu video nguồn ngắn (test 6s) thì tổng bản TẮT đã hụt còn 353
+  frame/11.77s — **hành vi có sẵn từ trước**, không phải lỗi cảnh đầu. Muốn test
+  tổng đúng `total*fps` thì phải dùng video nguồn **dài** (≥ total).
 
 ## ĐÃ BỎ (không làm lại)
 

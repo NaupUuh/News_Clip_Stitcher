@@ -32,7 +32,7 @@ from core import news as news_mod  # noqa: E402
 from core.ffmpeg_util import (VID_EXT, set_ffmpeg_dir, ffmpeg_dir,  # noqa: E402
                               find_ffmpeg, find_ffprobe)
 
-APP_VERSION = "1.27.2"
+APP_VERSION = "1.28.0"
 OUTPUT = BASE / "output"
 CONFIG_F = BASE / "config.json"
 OUTPUT.mkdir(exist_ok=True)
@@ -129,6 +129,9 @@ DEFAULTS = {
     "crf": 18,
     "preset": "veryfast",
     "recursive": False,
+    "intro_on": False,
+    "intro_dir": "",
+    "intro_sec": 3.0,
     "audio": "",
     "audio_dir": "",
     "tts_key": "",
@@ -358,6 +361,43 @@ class App:
         self.listbox.config(yscrollcommand=sb.set)
         self.count_var = tk.StringVar(value="0 folder")
         ttk.Label(g, textvariable=self.count_var, foreground="#0a6").pack(anchor="w")
+
+        # ── 1b. CẢNH ĐẦU (tuỳ chọn) ────────────────────────────────
+        # Tích thì mỗi video được ghép thêm 1 cảnh đầu, nhặt NGẪU NHIÊN trong
+        # folder này (1 ảnh hoặc 1 video ngắn 3-4s). Không tích -> chạy y hệt
+        # như trước, không thêm gì.
+        g = ttk.LabelFrame(body, text="1b. Cảnh đầu (tuỳ chọn)", padding=6)
+        g.pack(fill="x", **pad)
+        f = ttk.Frame(g); f.pack(fill="x")
+        self.intro_var = tk.BooleanVar(value=bool(self.cfg.get("intro_on", False)))
+        self.vars["intro_on"] = self.intro_var
+        ttk.Checkbutton(f, text="Thêm cảnh đầu cho mỗi video",
+                        variable=self.intro_var,
+                        command=self._intro_toggle).pack(side="left", padx=(2, 12))
+        ttk.Label(f, text="Dài:").pack(side="left")
+        try:
+            _isec = float(self.cfg.get("intro_sec", 3.0) or 3.0)
+        except Exception:
+            _isec = 3.0
+        self.intro_sec_var = tk.DoubleVar(value=_isec)
+        self.vars["intro_sec"] = self.intro_sec_var
+        tk.Spinbox(f, from_=0.5, to=8.0, increment=0.5, width=5,
+                   textvariable=self.intro_sec_var).pack(side="left", padx=(2, 4))
+        ttk.Label(f, text="giây").pack(side="left")
+
+        f = ttk.Frame(g); f.pack(fill="x", pady=(4, 0))
+        ttk.Label(f, text="Folder cảnh đầu:", width=16).pack(side="left")
+        self.intro_dir_var = tk.StringVar(value=self.cfg.get("intro_dir", ""))
+        self.vars["intro_dir"] = self.intro_dir_var
+        ttk.Entry(f, textvariable=self.intro_dir_var, width=62).pack(side="left", padx=3)
+        ttk.Button(f, text="Chọn", width=7,
+                   command=self._pick_intro_dir).pack(side="left", padx=2)
+        ttk.Button(f, text="✕", width=3,
+                   command=lambda: self.intro_dir_var.set("")).pack(side="left")
+        self.intro_note = tk.StringVar(value="")
+        ttk.Label(g, textvariable=self.intro_note, foreground="#666",
+                  wraplength=900, justify="left").pack(anchor="w")
+        self._intro_toggle()
 
         # 2. Thông số — CHỈ để lại thứ hay đổi. Phần đã tối ưu sẵn gom hết vào
         # khối "Nâng cao" (ẩn mặc định) -> bố cục chính gọn, đỡ rối mắt.
@@ -1666,6 +1706,54 @@ class App:
         if p:
             self.audio_dir_var.set(p)
 
+    # ── cảnh đầu (intro) ───────────────────────────────────
+    def _intro_toggle(self):
+        """Bật/tắt cảnh đầu -> cập nhật ghi chú + đếm file trong folder."""
+        on = False
+        try:
+            on = bool(self.intro_var.get())
+        except Exception:
+            on = False
+        d = (self.intro_dir_var.get() or "").strip()
+        if not on:
+            self.intro_note.set("Không tích → mọi thứ chạy y như cũ, "
+                                "không thêm cảnh nào.")
+            return
+        if not d or not os.path.isdir(d):
+            self.intro_note.set("⚠ Chưa chọn folder cảnh đầu — video sẽ chạy "
+                                "như bình thường, không có cảnh đầu.")
+            return
+        n_i = n_v = 0
+        try:
+            from core.ffmpeg_util import IMG_EXT, VID_EXT
+        except Exception:
+            IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+            VID_EXT = {".mp4", ".mov", ".mkv", ".webm", ".avi", ".m4v"}
+        try:
+            for p in Path(d).iterdir():
+                if not p.is_file():
+                    continue
+                e = p.suffix.lower()
+                if e in IMG_EXT:
+                    n_i += 1
+                elif e in VID_EXT:
+                    n_v += 1
+        except Exception:
+            pass
+        if n_i + n_v == 0:
+            self.intro_note.set("⚠ Folder này không có ảnh/video hợp lệ.")
+        else:
+            self.intro_note.set(
+                f"✓ {n_i} ảnh + {n_v} video — mỗi video con nhặt NGẪU NHIÊN "
+                f"1 file trong đây làm cảnh đầu (cảnh đầu ăn vào thời lượng, "
+                f"không làm video dài thêm).")
+
+    def _pick_intro_dir(self):
+        p = filedialog.askdirectory(title="Chọn folder ảnh/video ngắn làm cảnh đầu")
+        if p:
+            self.intro_dir_var.set(p)
+            self._intro_toggle()
+
     # ── ElevenLabs: giọng đọc tin ──────────────────────────
     def _tts_voice(self):
         """Giọng đang chọn -> tuple trong eleven.VOICES."""
@@ -2077,6 +2165,16 @@ class App:
         cfg["seed"] = None          # luôn random mỗi lần render
         cfg["bg_color"] = (0, 0, 0)
         cfg["audio"] = audio or ""
+        # cảnh đầu: chuẩn hoá kiểu dữ liệu (BooleanVar/DoubleVar -> bool/float)
+        try:
+            cfg["intro_on"] = bool(self.intro_var.get())
+        except Exception:
+            cfg["intro_on"] = False
+        cfg["intro_dir"] = str(cfg.get("intro_dir") or "").strip()
+        try:
+            cfg["intro_sec"] = max(0.5, min(8.0, float(self.intro_sec_var.get())))
+        except Exception:
+            cfg["intro_sec"] = 3.0
         return cfg
 
     def _find_audio_for(self, folder):

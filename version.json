@@ -1,5 +1,5 @@
 {
-  "version": "1.27.2",
-  "notes": "Fix giong ElevenLabs bi trung: voice_id kieu cu (v1) bi ElevenLabs gop ve cung 1 giong (Sam==Grace, Adam==Antoni==Arnold, Rachel==Nicole). Da thay bang ID thu vien moi (Grace->Aria, Nicole->Mimi, Antoni/Arnold->Bill) - do ECAPA xac nhan 28 giong khac nhau hoan toan.",
-  "date": "2026-10-14"
+  "version": "1.28.0",
+  "notes": "Them CANH DAU (tuy chon) o Tab 1: chon 1 folder chua anh hoac video ngan 3-4s, moi video con se nhac NGAU NHIEN 1 file trong do ghep lam canh dau tien. Khong tich -> chay y het nhu cu, khong them gi. Canh dau an vao thoi luong (video khong dai them), audio van khop.",
+  "date": "2026-10-22"
 }

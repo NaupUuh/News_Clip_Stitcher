@@ -952,6 +952,9 @@ class Stitcher:
             """Trả về (số video lập được, cỡ cảnh) cho từng cỡ cảnh."""
             c = dict(cfg)
             c["seed"] = seed
+            # Cảnh đầu KHÔNG lấy media từ pool nên không ảnh hưởng con số tối
+            # đa; tắt đi để khỏi dò độ dài/đoạn đen lặp lại hàng trăm lần.
+            c["intro_on"] = False
             q = Stitcher(c, log=lambda m: None)
             out = []
             seen = set()
@@ -1058,6 +1061,17 @@ class Stitcher:
         if not imgs and not vids:
             raise StitchError("Folder không có ảnh/video hợp lệ: %s" % folder)
 
+        # ── CẢNH ĐẦU (intro) — TUỲ CHỌN, mặc định TẮT (v1.28.0) ──────────
+        # Bật: nhặt NGẪU NHIÊN 1 file (ảnh, hoặc video ngắn 3-4s) trong folder
+        # riêng của Tab 1 rồi ghép làm cảnh ĐẦU TIÊN. Tổng thời lượng video
+        # KHÔNG đổi: cảnh đầu ăn vào phần giây của các cảnh sau, nên audio
+        # (đã ép đúng `total` giây) vẫn khớp. Tắt -> y hệt hành vi cũ.
+        intro_sc, intro_fr = (None, 0)
+        if cfg.get("intro_on"):
+            intro_sc, intro_fr = self._intro_scene(
+                cfg.get("intro_dir"), rng, fps, total_frames)
+        body_frames = max(1, total_frames - intro_fr)
+
         # ── LUẬT MỚI (v1.20.0): CẮT LÌA video gốc thành NHIỀU ĐOẠN ───────
         # Mỗi đoạn chỉ dùng 1 lần; MỘT video con dùng NHIỀU đoạn (đo từ video
         # mẫu user gửi: 8 cảnh = 6-7 đoạn video + 1-2 ảnh). Hết đoạn video ->
@@ -1109,10 +1123,9 @@ class Stitcher:
         if not items:
             raise StitchError("Không chọn được file nào.")
 
-        slots = distribute_frames(total_frames, len(items), rng,
+        slots = distribute_frames(body_frames, len(items), rng,
                                   lo_frames, hi_frames)
         # Con trỏ cắt chạy TUẦN TỰ nên nhiều cảnh có thể dùng chung 1 file
-        # video: phải trừ dần số giây đã lấy mới biết cảnh này còn được bao
         # nhiêu. Lặp vài vòng cho hội tụ (slot ngắn lại thì nhường giây cho
         # cảnh sau cùng file).
         for _ in range(4):
@@ -1183,7 +1196,12 @@ class Stitcher:
         self.log("── %s" % Path(folder).name)
         self.log("   pool: %d ảnh + %d video | chọn %d file"
                  % (len(imgs), len(vids), len(items)))
+        if intro_sc:
+            self.log("   cảnh đầu: %s (%.2fs)"
+                     % (intro_sc["path"].name, intro_fr / float(fps)))
         self.log("   seed: %.6f" % seed_used)
+        if intro_sc:
+            scenes.insert(0, intro_sc)
         parts = []
         for s in scenes:
             if s["kind"] == "video":
@@ -1245,6 +1263,75 @@ class Stitcher:
 
 
     # ── internal ───────────────────────────────────────────
+    def _intro_scene(self, folder, rng, fps, total_frames):
+        """Nhặt NGẪU NHIÊN 1 file trong folder cảnh đầu -> (scene, số frame).
+
+        Nhận cả ẢNH và VIDEO NGẮN (3-4s). Video dài hơn mức cho phép thì chỉ
+        lấy đoạn đầu `intro_sec` giây. Trả (None, 0) nếu folder trống/không có
+        file hợp lệ — khi đó video chạy y như cũ, KHÔNG báo lỗi (tuỳ chọn).
+        """
+        cfg = self.cfg
+        if not folder or not os.path.isdir(str(folder)):
+            self.log("   ⚠ Bật cảnh đầu nhưng chưa chọn folder — bỏ qua.")
+            return (None, 0)
+        # Dùng RNG RIÊNG: không đụng vào chuỗi random của phần thân, nhờ vậy
+        # bật/tắt cảnh đầu không làm thay đổi cách chọn cảnh của video.
+        rng = random.Random()
+        imgs, vids = list_media(folder, False)
+        pool = list(imgs) + list(vids)
+        if not pool:
+            self.log("   ⚠ Folder cảnh đầu không có ảnh/video hợp lệ — bỏ qua.")
+            return (None, 0)
+
+        try:
+            want = float(cfg.get("intro_sec", 3.0) or 3.0)
+        except (TypeError, ValueError):
+            want = 3.0
+        want = max(0.5, min(8.0, want))
+
+        pick = pool[rng.randrange(len(pool))]
+        is_vid = pick.suffix.lower() in VID_EXT
+        # Cảnh đầu không được ăn quá 40% tổng thời lượng (video 15s -> tối đa 6s)
+        cap = max(0.5, (total_frames / float(fps)) * 0.4)
+        want = min(want, cap)
+        frames = max(1, int(round(want * fps)))
+
+        if not is_vid:
+            kb = kenburns_params(rng, cfg.get("kb_min", 1.06), cfg.get("kb_max", 1.18))
+            zs, ze, px0, px1, py0, py1 = kb
+            grade, kind = (None, "")
+            if cfg.get("grade", True):
+                grade, kind = _grade_filter(rng, cfg.get("grade_strength", 1.0))
+            return ({"kind": "image", "path": pick, "frames": frames,
+                     "kb": (zs, ze, _kb_center(px0), _kb_center(px1),
+                            _kb_center(py0), _kb_center(py1)),
+                     "grade": grade, "grade_name": kind, "intro": True}, frames)
+
+        # VIDEO: lấy đoạn ĐẦU, bỏ phần đen nếu có, không vượt quá độ dài file
+        dur = 0.0
+        try:
+            dur = float(probe_duration(pick, self.ffprobe) or 0.0)
+        except Exception:
+            dur = 0.0
+        start = 0.0
+        if dur >= 1.0:
+            try:
+                h, _t = _black_edges(self.ffmpeg, pick, dur)
+                if h and h < dur - 0.5:
+                    start = round(h, 3)
+            except Exception:
+                start = 0.0
+        avail = max(0.0, dur - start) if dur > 0 else want
+        nfr = int(round(min(want, avail) * fps))
+        nfr = max(1, min(frames, nfr))
+        grade, kind = (None, "")
+        if cfg.get("grade", True):
+            grade, kind = _grade_filter(rng, float(cfg.get("grade_strength", 1.0)) * 0.5)
+        return ({"kind": "video", "path": pick, "frames": nfr,
+                 "segs": [(start, nfr)], "start": start,
+                 "win": (round(start, 2), round(start + nfr / float(fps), 2)),
+                 "grade": grade, "grade_name": kind, "intro": True}, nfr)
+
     def _video_skips(self, vids, dur):
         """Dò đoạn ĐEN đầu/cuối clip -> {tên file: (bỏ_đầu, bỏ_đuôi)}.
 
